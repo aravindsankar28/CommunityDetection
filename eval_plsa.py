@@ -117,10 +117,17 @@ def eval_f1(predFile, groundTruthFile):
 	score = score1 + score2
 	return score
 
-
+avg_jac = 0.0
+avg_f1 = 0.0
+print "jaccard", "f1"
 with open('facebook/filenames.txt') as f: 
 	lines = f.read().splitlines()
 	for f in lines:
 		p1 = "facebook/"+f
 		p2 = "PLSA_Network/Results/"+f
 		print eval_jaccard(p1,p2), eval_f1(p1,p2)
+		avg_f1 += eval_f1(p1,p2)
+		avg_jac += eval_jaccard(p1,p2)
+
+print "Avg_jac", "Avg_f1"
+print avg_jac/10, avg_f1/10
