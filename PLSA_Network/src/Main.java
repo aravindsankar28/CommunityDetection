@@ -410,7 +410,7 @@ public class Main {
 				temp.put(j, temp.get(j) + wordTopicDistrbutionTheta.get(word).get(j));
 
 		for (Double val : temp.values())
-			if (Math.abs(val - 1.0) > 0.0001) {
+			if (Math.abs(val - 1.0) > 0.00001) {
 				System.out.println("Not sum to 1 " + val);
 				return false;
 			}
@@ -436,21 +436,32 @@ public class Main {
 		randomParameterInitialization();
 		emIterations();
 		return perplexity();
-
 	}
 
 	void varyingK() {
 		double min = Double.MAX_VALUE;
-		int topics =0;
-		for (int k = 1; k < 30; k++) {
-			double perp = runForK(k);
-			if (k != 1 && perp < min) {
-				min = perp;
-				topics = k;
+		int topics = 0;
+		HashMap<Integer, Double> scores = new HashMap<>();
+		for (int run = 0; run < 1000; run++) {
+			for (int k = 1; k < 30; k++) {
+				double perp = runForK(k);
+				if (k != 1) {
+					if (!scores.containsKey(k))
+						scores.put(k, 0.0);
+					scores.put(k, perp + scores.get(k));
+				}
+			}
+		}
+
+		for (Integer key : scores.keySet()) {
+			if (scores.get(key) < min) {
+				min = scores.get(key);
+				topics = key;
 			}
 		}
 		K = topics;
 		outputCommunities();
+
 	}
 
 	void outputCommunities() {
@@ -463,14 +474,22 @@ public class Main {
 				comms.put(idx, new ArrayList<Integer>());
 			comms.get(idx).add(docToNodeMap.get(d));
 		}
-		System.out.println("# communities "+K);
-		System.out.println(comms);
+		System.out.println("# communities " + K);
+		int i = 0;
+		for (ArrayList<Integer> comm : comms.values()) {
+			System.out.print("circle" + i);
+			for (Integer node : comm)
+				System.out.print(" " + node);
+			System.out.println();
+			i++;
+		}
 	}
 
 	public static void main(String[] args) throws IOException {
 		Main object = new Main();
-		object.readDataset("0.feat");
-		object.varyingK();
+		// object.readDataset("../facebook/0.feat");
+		object.readDataset(args[0]);
 		
+		object.varyingK();
 	}
 }
