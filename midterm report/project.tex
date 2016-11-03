@@ -1,0 +1,113 @@
+	              
+% --------------------------------------------------------------
+% This is all preamble stuff that you don't have to worry about.
+% Head down to where it says "Start here"
+% --------------------------------------------------------------
+ 
+\documentclass[11pt]{article}
+\usepackage{ulem}
+\usepackage[margin=1in]{geometry} 
+\usepackage{graphicx}
+\usepackage{amsmath,amsthm,amssymb} 
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newenvironment{theorem}[2][Theorem]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{lemma}[2][Lemma]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{exercise}[2][Exercise]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{reflection}[2][Reflection]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{proposition}[2][Proposition]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{corollary}[2][Corollary]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+ 
+\begin{document}
+ 
+% --------------------------------------------------------------
+%                         Start here
+% --------------------------------------------------------------
+ 
+%\renewcommand{\qedsymbol}{\filledbox}
+ 
+\title{CS 498: Project Midterm Report}%replace X with the appropriate number
+\author{Adit Krishnan, UIN: 659913017, Net ID: aditk2 , Aravind Sankar, UIN: 671514664, Net ID: asankar3 \\
+CS 598 - Advanced Information Retrieval} %if necessary, replace with your course title
+\maketitle
+\begin{section}{Introduction}
+The task of discovering social circles in a user's personal network is an important one, in the context of social media. The problem can be posed as a clustering task that aims to identify distinct groups of friends within the ego network of the target user. The goal of this project is to identify these circles in a target user's ego network provided the attributes of the ego user, and his friends, as well as the network structure of his friends (i.e edges between pairs of his friends). Ideally, we want to generate hard clusters that can overlap (since social circles do overlap in most real life contexts, a friend could also be a classmate). Soft clusters may not provide unambiguous assignments which is undesirable. Hence, we wish to develop a joint model using the network structure as well as the attribute information to predict overlapping social circles, and evaluate them against the ground truth circles which are available in the SNAP facebook dataset \cite{facebook dataset}.
+\end{section}
+\begin{section}{Related Work}
+Community detection is closely related to the problem of detecting social circles, since social circles can be conceived as distinct communities within a user's ego network. Classical node clustering algorithms attempt to cluster nodes to form communities either by considering graph structure in isolation or by matching attributes of users \cite{johnson}. Models that are based on single assignment clustering \cite{l1,l2} fail to capture the inherent overlaps in circles. Alternately soft clustering methods attempt to probabilistically model the extent to which a node is part of a cluster. Topic models such as \cite{plsa}, \cite{lda} and variants thereof can be applied to identify soft clusters. \cite{facebook dataset} attempts to bridge this gap by modelling the network likelihood using both the attribute values and the community memberships (latent variable to be discovered).\cite{cesna} identifies that the previous model may fail to capture the mutual dependency of the network structure of users. This is addressed by developing a common generative process to capure both. 
+\end{section}
+\begin{section}{Implementation}
+We implement 2 simple baseline algorithms as follows and present their evaluation results using the metric defined in \cite{cesna} with $\delta$ set to Jaccard and F1-Score functions. While one of our baselines is purely based on the attribute values of the nodes, the other uses only the network structure. Thus ideally these baselines can be improved upon by a method that combines both these aspects of the network to find circles.
+\begin{itemize}
+\item \textbf{Baseline 1 - PLSA based community detection (Uses only attributes)\\}
+Topic Models can be trivially adapted to produce soft clusters among nodes in an attributed network. Each node is treated as a document and it's attributes are treated similar to the words in the document. PLSA attempts to produce topics, which are esentially distributions over the attributes and cluster the nodes based on what their topic mixture values are. Once we obtain the soft clustering distributions of nodes, we can form hard clusters, by assigning each node to the cluster which has the highest component in the mixture. This method uses only attributes and not the network structure of nodes. Number of clusters was chosen to minimize perplexity.
+\item \textbf{Baseline 2 - Girvan Newman Clustering Algorithm (Uses only network structure)\\}
+The Girvan Newman clustering algorithm begins with all nodes lying in a single cluster. It then successively deletes the edges with the highest betweeness centrality. Eventually this leads to nodes being split into multiple components which form the clusters that are outputed. The dendrogram structure that is generated can be cut at different levels to obtain to different numbers of clusters of nodes.
+\end{itemize}
+
+\end{section}
+
+\begin{section}{Results}
+Both methods were evaluated against ground truth communities using the metric presented in \cite{cesna} with Jaccard and F1 $\delta$ functions.
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|}
+\hline
+& PLSA with $\delta$ = F1 & PLSA with $\delta$ = Jaccard & GNC with $\delta$=F1 & GNC with $\delta$=Jaccard\\
+\hline
+Ego Network 1 & 0.0830323714608 & 0.0861349592883 & 0.185326526504 & 0.166765973108\\ 
+Ego Network 2 & 0.0482687618024 & 0.0661493849308 & 0.249450226708 & 0.260856069586\\ 
+Ego Network 3 & 0.055392811404 & 0.0640557924006 & 0.269306877669 & 0.27004376444\\ 
+Ego Network 4 & 0.0556918084486 & 0.0552375845927 & 0.286015290551 & 0.139101789392\\ 
+Ego Network 5 & 0.0559724019111 & 0.0595146353208 & 0.0866878857066 & 0.084590761101\\ 
+Ego Network 6 & 0.089147290346 & 0.118093111177 & 0.210690622785 & 0.242270747497\\ 
+Ego Network 7 & 0.280912655971 & 0.250993973347 & 0.345375067924 & 0.244668691555\\ 
+Ego Network 8 & 0.0996365890523 & 0.134004097054 & 0.526744499216 & 0.38760800194\\ 
+Ego Network 9 & 0.109448298689 & 0.138776451434 & 0.286715595986 & 0.275998119974\\ 
+Ego Network 10 & 0.21588237209 & 0.20895802915 & 0.467940047814 & 0.253812985106\\ 
+\hline
+Average & 0.109338536118 & 0.11819180187 & 0.291425264086 & 0.23257169037\\
+\hline
+\end{tabular}
+\end{center}
+\end{section}
+\begin{section}{Interpretation}
+\begin{itemize}
+\item The PLSA based method produces poorer results. This indicates that it is hard to produce good communities in the absence of the links between nodes. Attribute information alone does not appear to generate good communities.
+\item A possible reason for the poor performance of the above baseline is sparsity in attributes. In most ego networks, a very large number of attributes are 0 for most users. A simple way to deal with this is to perform feature selection or feature extraction.
+\item Girvan Newman clustering is intractable for larger ego networks. In our facebook dataset \cite{facebook dataset}, the larger ego networks take about 2 hours to cluster with an efficient Girvan Newman implementation from \cite{SNAP}.
+\end{itemize}
+\end{section}
+
+\begin{thebibliography}{3}
+\bibitem{SNAP}
+Leskovec, Jure. "Stanford network analysis package (snap)." URL http://snap. stanford. edu (2013).
+\bibitem{SNAP dataset}
+Leskovec, Jure, and Andrej Krevl. "SNAP Datasets: Stanford large network dataset collection, June 2014." URL: http://snap. stanford. edu/data (2014).
+\bibitem{facebook dataset}
+McAuley, Julian J., and Jure Leskovec. "Learning to Discover Social Circles in Ego Networks." NIPS. Vol. 2012. 2012.
+\bibitem{cesna}
+Yang, Jaewon, Julian McAuley, and Jure Leskovec. "Community detection in networks with node attributes." 2013 IEEE 13th International Conference on Data Mining. IEEE, 2013.
+\bibitem{plsa}
+Hofmann, Thomas. "Probabilistic latent semantic indexing." Proceedings of the 22nd annual international ACM SIGIR conference on Research and development in information retrieval. ACM, 1999.
+\bibitem{lda}
+Blei, David M., Andrew Y. Ng, and Michael I. Jordan. "Latent dirichlet allocation." Journal of machine Learning research 3.Jan (2003): 993-1022.
+\bibitem{l1}
+ L. Akoglu, H. Tong, B. Meeder, and C. Faloutsos. PICS: Parameter-free
+Identification of Cohesive Subgroups in Large Attributed Graphs. SDM
+’12, 2012.
+\bibitem{l2}
+M. Ester, R. Ge, B. Gao, Z. Hu, and B. Ben-Moshe. Joint Cluster
+Analysis of Attribute Data and Relationship Data: the Connected kCenter
+Problem. In SDM ’06, 2006.
+\bibitem{johnson}
+Johnson, Stephen C. "Hierarchical clustering schemes." Psychometrika 32.3 (1967): 241-254.
+\end{thebibliography}
+
+\end{document}
