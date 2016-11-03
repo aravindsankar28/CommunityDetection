@@ -34,8 +34,7 @@
 %\renewcommand{\qedsymbol}{\filledbox}
  
 \title{CS 498: Project Midterm Report}%replace X with the appropriate number
-\author{Adit Krishnan, UIN: 659913017, Net ID: aditk2 , Aravind Sankar, UIN: 671514664, Net ID: asankar3 \\
-CS 598 - Advanced Information Retrieval} %if necessary, replace with your course title
+\author{Adit Krishnan, UIN: 659913017, Net ID: aditk2 , Aravind Sankar, UIN: 671514664, Net ID: asankar3 \\} %if necessary, replace with your course title
 \maketitle
 \begin{section}{Introduction}
 The task of discovering social circles in a user's personal network is an important one, in the context of social media. The problem can be posed as a clustering task that aims to identify distinct groups of friends within the ego network of the target user. The goal of this project is to identify these circles in a target user's ego network provided the attributes of the ego user, and his friends, as well as the network structure of his friends (i.e edges between pairs of his friends). Ideally, we want to generate hard clusters that can overlap (since social circles do overlap in most real life contexts, a friend could also be a classmate). Soft clusters may not provide unambiguous assignments which is undesirable. Hence, we wish to develop a joint model using the network structure as well as the attribute information to predict overlapping social circles, and evaluate them against the ground truth circles which are available in the SNAP facebook dataset \cite{facebook dataset}.
