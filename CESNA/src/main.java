@@ -9,6 +9,7 @@ public class main {
 	HashMap<Integer, ArrayList<Double>> F; // u,c
 	HashMap<Integer, ArrayList<Double>> W;// k,c
 	int C; // No of communities
+	double lambda; // regularization param.
 
 	public main(int C) {
 		G = new HashMap<>();
@@ -29,6 +30,7 @@ public class main {
 			}
 			G.get(e0).add(e1);
 		}
+		br.close();
 		br = new BufferedReader(new FileReader(attrfilename));
 		while ((line = br.readLine()) != null) {
 			String[] attributes = line.split(" ");
@@ -38,6 +40,7 @@ public class main {
 				X.get(v).add(Boolean.parseBoolean(attributes[i]));
 			}
 		}
+		br.close();
 		// adding back nodes that are in attrfile but not in graph
 		for (int node : X.keySet()) {
 			if (!G.containsKey(node)) {
@@ -47,6 +50,7 @@ public class main {
 	}
 
 	private void initAffiliations() {
+		// Conductance computation.
 		HashMap<Integer, Double> conductance = new HashMap<>();
 		for (int node : G.keySet()) {
 			ArrayList<Integer> neighbors = new ArrayList<Integer>();
@@ -70,8 +74,8 @@ public class main {
 				System.out.println(inedges + " " + outedges);
 			}
 		}
-		mapUtil M = new mapUtil();
-		conductance = (HashMap<Integer, Double>) M.sortByValue(conductance);
+		
+		conductance = (HashMap<Integer, Double>) mapUtil.sortByValue(conductance);
 		ArrayList<Integer> alreadyAdded = new ArrayList<Integer>();
 		int community = 0;
 		double bias = 0.3;
@@ -101,7 +105,31 @@ public class main {
 			community++;
 		}
 	}
+	
+	// L_G
+	double graphLikelihood()
+	{
+		return 0.0;
+	}
+	
+	// L_X
+	double attributeLikelihood()
+	{
+		return 0.0;
+	}
 
+	
+	void updateF()
+	{
+		
+	}
+	
+	void updateW()
+	{
+		
+	}
+	
+	
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
