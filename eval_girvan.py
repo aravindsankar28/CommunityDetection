@@ -124,7 +124,7 @@ with open('facebook/filenames.txt') as f:
 	lines = f.read().splitlines()
 	for f in lines:
 		p1 = "facebook/"+f
-		p2 = "Dbs/"+f
+		p2 = "pred_net/"+f
 		# p2 = "Girvan_Results/"+f
 		print eval_jaccard(p1,p2), eval_f1(p1,p2)
 		avg_f1 += eval_f1(p1,p2)
