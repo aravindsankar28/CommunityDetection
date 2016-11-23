@@ -9,9 +9,11 @@ public class main {
 	HashMap<Integer, ArrayList<Double>> F; // u,c
 	HashMap<Integer, ArrayList<Double>> W;// k,c
 	int C; // No of communities
-	double lambda; // regularization param.
-
-	public main(int C) {
+	int numAttr;
+	
+	public main(int com) {
+		C = com;
+		numAttr = 0;
 		G = new HashMap<>();
 		X = new HashMap<>();
 		F = new HashMap<>();
@@ -30,17 +32,16 @@ public class main {
 			}
 			G.get(e0).add(e1);
 		}
-		br.close();
 		br = new BufferedReader(new FileReader(attrfilename));
 		while ((line = br.readLine()) != null) {
 			String[] attributes = line.split(" ");
+			if (numAttr == 0) numAttr = attributes.length - 1;
 			int v = Integer.parseInt(attributes[0]);
 			X.put(v, new ArrayList<Boolean>());
 			for (int i = 1; i < attributes.length; i++) {
 				X.get(v).add(Boolean.parseBoolean(attributes[i]));
 			}
 		}
-		br.close();
 		// adding back nodes that are in attrfile but not in graph
 		for (int node : X.keySet()) {
 			if (!G.containsKey(node)) {
@@ -50,7 +51,7 @@ public class main {
 	}
 
 	private void initAffiliations() {
-		// Conductance computation.
+		//Compute the conductances of nodes
 		HashMap<Integer, Double> conductance = new HashMap<>();
 		for (int node : G.keySet()) {
 			ArrayList<Integer> neighbors = new ArrayList<Integer>();
@@ -74,12 +75,14 @@ public class main {
 				System.out.println(inedges + " " + outedges);
 			}
 		}
-		
-		conductance = (HashMap<Integer, Double>) mapUtil.sortByValue(conductance);
+		mapUtil M = new mapUtil();
+		conductance = (HashMap<Integer, Double>) M.sortByValue(conductance);
 		ArrayList<Integer> alreadyAdded = new ArrayList<Integer>();
 		int community = 0;
 		double bias = 0.3;
 		Random r = new Random();
+		
+		//Now initialize communities based on the conductance values computed
 		for (int k : conductance.keySet()) {
 			if (conductance.get(k) < 0)
 				continue;
@@ -104,32 +107,17 @@ public class main {
 			}
 			community++;
 		}
-	}
-	
-	// L_G
-	double graphLikelihood()
-	{
-		return 0.0;
-	}
-	
-	// L_X
-	double attributeLikelihood()
-	{
-		return 0.0;
+		
+		
+		//Initialize weights W k,c
+		for (int attr = 0; attr < numAttr; attr++){
+			W.put(attr, new ArrayList<Double>());
+			for (int com = 0; com < C; com++){
+				W.get(attr).add((r.nextDouble()*2.0)-1.0);
+			}
+		}
 	}
 
-	
-	void updateF()
-	{
-		
-	}
-	
-	void updateW()
-	{
-		
-	}
-	
-	
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
