@@ -16,6 +16,7 @@ public class main {
 	double lambda;
 	int maxIter;
 	double delta;
+	double beta;
 
 	public main(int com) {
 		C = com;
@@ -28,7 +29,7 @@ public class main {
 		eta = 0.001;
 		lambda = 1;
 		maxIter = 1000;
-
+		beta = 0.7;
 	}
 
 	private void readGraph(String graphfilename, String attrfilename) throws Exception {
@@ -132,25 +133,22 @@ public class main {
 	}
 
 	// L_G
-	double graphLikelihood() {
+	double graphLikelihood(HashMap<Integer, ArrayList<Double>> F) {
 		double Lg = 0.0;
-
 		for (int u : G.keySet()) {
 			for (int v : G.keySet()) {
 				if (G.get(u).contains(v)) {
 					Lg += Math.log(1 - Math.exp(-1 * MathFunctions.dotProduct(F.get(u), F.get(v))));
-				} else {
-					{
-						Lg -= MathFunctions.dotProduct(F.get(u), F.get(v));
-					}
-				}
+				} else
+					Lg -= MathFunctions.dotProduct(F.get(u), F.get(v));
 			}
 		}
+
 		return Lg;
 	}
 
 	// Lx
-	double attributeLikelihood() {
+	double attributeLikelihood(HashMap<Integer, ArrayList<Double>> W) {
 		double Lx = 0.0;
 		for (int u : G.keySet()) {
 			for (int k = 0; k < numAttr; k++) {
@@ -163,14 +161,47 @@ public class main {
 		return Lx;
 	}
 
-	double likelihood() {
-		return (1 - alpha) * graphLikelihood() + alpha * attributeLikelihood() - lambda * MathFunctions.L1Norm(W);
+	double likelihood(HashMap<Integer, ArrayList<Double>> F, HashMap<Integer, ArrayList<Double>> W) {
+		return (1 - alpha) * graphLikelihood(F) + alpha * attributeLikelihood(W) - lambda * MathFunctions.L1Norm(W);
+	}
+
+	double lineSearch(HashMap<Integer, ArrayList<Double>> updates) {
+		double fx = (1 - alpha) * graphLikelihood(F) + (alpha) * attributeLikelihood(W);
+		// System.out.println(fx);
+		double t = 0.001;
+
+		boolean toContinue = true;
+		do {
+			HashMap<Integer, ArrayList<Double>> F_copy = new HashMap<>(F);
+			for (int u : G.keySet()) {
+				for (int c = 0; c < C; c++) {
+					F_copy.get(u).set(c, Math.max(0, F_copy.get(u).get(c) + (t * updates.get(u).get(c))));
+				}
+			}
+			// System.out.println(t);
+			// System.out.println(F_copy);
+			double fx_new = (1 - alpha) * graphLikelihood(F_copy) + (alpha) * attributeLikelihood(W);
+			//System.out.println("lg = "+graphLikelihood(F_copy));
+		//	System.out.println("fx new = "+fx_new);
+			// System.out.println(MathFunctions.L2NormSq(updates));
+			System.out.println(fx_new-fx);
+			
+			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) / 2.0) {
+				t = beta * t;
+			} else
+				toContinue = false;
+			
+
+		} while (toContinue);
+		return t;
 	}
 
 	void updateF() {
-		HashMap<Integer, ArrayList<Double>> newF = new HashMap<>();
+		// HashMap<Integer, ArrayList<Double>> newF = new HashMap<>();
+		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
+
 		double[] sumFvc = new double[C];
-		
+
 		for (int v : G.keySet()) {
 			ArrayList<Double> Fv = F.get(v);
 			for (int c = 0; c < C; c++) {
@@ -179,7 +210,8 @@ public class main {
 		}
 
 		for (int u : G.keySet()) {
-			newF.put(u, new ArrayList<Double>());
+			// newF.put(u, new ArrayList<Double>());
+			updates.put(u, new ArrayList<Double>());
 			double[] derivative_G = new double[C];
 			double[] derivative_X = new double[C];
 			double[] diff = new double[C];
@@ -214,40 +246,49 @@ public class main {
 
 			for (int c = 0; c < C; c++) {
 				double update = (1 - alpha) * derivative_G[c] + (alpha) * derivative_X[c];
-				newF.get(u).add(Math.max(0.0, F.get(u).get(c) + eta * update));
+				updates.get(u).add(update);
 			}
 		}
-		F = new HashMap<>(newF);
+
+		// eta = lineSearch(updates);
+		// System.out.println(eta);
+		for (int u : G.keySet()) {
+			for (int c = 0; c < C; c++) {
+				F.get(u).set(c,Math.max(0.0, F.get(u).get(c) + eta * updates.get(u).get(c)));
+			}
+		}
+		// F = new HashMap<>(newF);
+		// System.out.println(F);
 	}
 
 	void updateW() {
 		HashMap<Integer, ArrayList<Double>> newW = new HashMap<>();
-		for (int k = 0; k < numAttr; k++) {
-			newW.put(k, new ArrayList());
-			for (int c = 0; c < C; c++) {
-				double update = 0.0;
-
-				for (int u : G.keySet()) {
-					double z = X.get(u).get(k) ? 1 : 0;
-					double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(W.get(k), F.get(u))));
-					update += (z - Quk) * F.get(u).get(c);
+		for (int u : G.keySet()) {
+			for (int k = 0; k < numAttr; k++) {
+				double z = X.get(u).get(k) ? 1 : 0;
+				double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(W.get(k), F.get(u))));
+				double diff = (z - Quk);
+				newW.put(k, new ArrayList<Double>());
+				for (int c = 0; c < C; c++) {
+					double update = 0.0;
+					update += diff * F.get(u).get(c);
+					update *= alpha;
+					if (W.get(k).get(c) > 0)
+						update -= lambda;
+					else
+						update += lambda;
+					newW.get(k).add(update * eta);
 				}
-				update *= alpha;
-				if (W.get(k).get(c) > 0)
-					update -= lambda;
-				else
-					update += lambda;
-				newW.get(k).add(update * eta);
 			}
 		}
 	}
 
 	void gradientAscent() {
 		double startTime = System.currentTimeMillis();
-		
+
 		double previousLikelihood = -1;
 		for (int iter = 0; iter < maxIter; iter++) {
-			double likelihood = likelihood();
+			double likelihood = likelihood(F, W);
 			System.out.println("Likelihood at iter " + iter + " " + likelihood);
 			if (previousLikelihood != -1) {
 				// System.out.println((likelihood - previousLikelihood) /
@@ -259,7 +300,8 @@ public class main {
 
 			updateF();
 			updateW();
-			System.out.println("Time "+(System.currentTimeMillis() - startTime)/(1000.0*(iter+1)));
+			System.out.println(eta);
+			System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0 * (iter + 1)));
 		}
 	}
 
@@ -285,6 +327,7 @@ public class main {
 		}
 	}
 
+	
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
