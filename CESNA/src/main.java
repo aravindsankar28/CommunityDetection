@@ -94,7 +94,7 @@ public class main {
 		conductance = (HashMap<Integer, Double>) mapUtil.sortByValue(conductance);
 		ArrayList<Integer> alreadyAdded = new ArrayList<Integer>();
 		int community = 0;
-		double bias = 0.3;
+		double bias = 0.1;
 		Random r = new Random();
 
 		// Now initialize communities based on the conductance values computed
@@ -112,9 +112,9 @@ public class main {
 				ArrayList<Double> Fu = new ArrayList<>();
 				for (int c = 0; c < C; c++) {
 					if (c == community) {
-						Fu.add(0.7 + (0.3 * r.nextDouble()));
+						Fu.add(1-bias + (bias * r.nextDouble()));
 					} else {
-						Fu.add(0.3 * r.nextDouble());
+						Fu.add(bias * r.nextDouble());
 					}
 				}
 				F.put(n, Fu);
@@ -181,26 +181,23 @@ public class main {
 			// System.out.println(t);
 			// System.out.println(F_copy);
 			double fx_new = (1 - alpha) * graphLikelihood(F_copy) + (alpha) * attributeLikelihood(W);
-			//System.out.println("lg = "+graphLikelihood(F_copy));
-		//	System.out.println("fx new = "+fx_new);
+			// System.out.println("lg = "+graphLikelihood(F_copy));
+			// System.out.println("fx new = "+fx_new);
 			// System.out.println(MathFunctions.L2NormSq(updates));
-			System.out.println(fx_new-fx);
-			
+			System.out.println(fx_new - fx);
+
 			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) / 2.0) {
 				t = beta * t;
 			} else
 				toContinue = false;
-			
 
 		} while (toContinue);
 		return t;
 	}
 
-	void updateF() {
-		// HashMap<Integer, ArrayList<Double>> newF = new HashMap<>();
-		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
-
+	void updateFDriver() throws InterruptedException {
 		double[] sumFvc = new double[C];
+		HashMap<Integer, ArrayList<Double>> updates;
 
 		for (int v : G.keySet()) {
 			ArrayList<Double> Fv = F.get(v);
@@ -208,8 +205,66 @@ public class main {
 				sumFvc[c] += Fv.get(c);
 			}
 		}
+		ArrayList<ArrayList<Integer>> nodeSplits = new ArrayList<>();
+		for (int i = 0; i < 4; i++)
+			nodeSplits.add(new ArrayList<>());
 
-		for (int u : G.keySet()) {
+		int i = 0;
+		for (int node : G.keySet()) {
+			nodeSplits.get(i % 4).add(node);
+			i++;
+		}
+
+		UpdateFThread[] threads = new UpdateFThread[4];
+		
+		for (int j = 0; j < threads.length; j++) {
+			threads[j] = new UpdateFThread(sumFvc, nodeSplits.get(j));
+		}
+
+		for (UpdateFThread thread : threads) {
+			thread.start();
+		}
+		for (UpdateFThread thread : threads) {
+			thread.join();
+		}
+
+		for (UpdateFThread thread : threads) {
+			for (int u : thread.updates.keySet()) {
+				for (int c = 0; c < C; c++) {
+					F.get(u).set(c, Math.max(0.0, F.get(u).get(c) + eta * thread.updates.get(u).get(c)));
+				}
+			}
+		}
+
+	}
+
+	class UpdateFThread extends Thread {
+
+		ArrayList<Integer> nodes;
+		double[] sumFvc;
+		HashMap<Integer, ArrayList<Double>> updates;
+
+		UpdateFThread(double[] sumFvc, ArrayList<Integer> nodes) {
+			this.sumFvc = sumFvc;
+			this.nodes = nodes;
+		}
+
+		public void run() {
+			updates = updateF(sumFvc, nodes);
+		}
+	}
+
+	HashMap<Integer, ArrayList<Double>> updateF(double[] sumFvc, ArrayList<Integer> nodes) {
+		// HashMap<Integer, ArrayList<Double>> newF = new HashMap<>();
+		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
+		/*
+		 * double[] sumFvc = new double[C];
+		 * 
+		 * for (int v : G.keySet()) { ArrayList<Double> Fv = F.get(v); for (int
+		 * c = 0; c < C; c++) { sumFvc[c] += Fv.get(c); } }
+		 */
+
+		for (int u : nodes) {
 			// newF.put(u, new ArrayList<Double>());
 			updates.put(u, new ArrayList<Double>());
 			double[] derivative_G = new double[C];
@@ -252,13 +307,10 @@ public class main {
 
 		// eta = lineSearch(updates);
 		// System.out.println(eta);
-		for (int u : G.keySet()) {
-			for (int c = 0; c < C; c++) {
-				F.get(u).set(c,Math.max(0.0, F.get(u).get(c) + eta * updates.get(u).get(c)));
-			}
-		}
+
 		// F = new HashMap<>(newF);
 		// System.out.println(F);
+		return updates;
 	}
 
 	void updateW() {
@@ -283,7 +335,7 @@ public class main {
 		}
 	}
 
-	void gradientAscent() {
+	void gradientAscent() throws InterruptedException {
 		double startTime = System.currentTimeMillis();
 
 		double previousLikelihood = -1;
@@ -298,7 +350,7 @@ public class main {
 			}
 			previousLikelihood = likelihood;
 
-			updateF();
+			updateFDriver();
 			updateW();
 			System.out.println(eta);
 			System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0 * (iter + 1)));
@@ -327,7 +379,6 @@ public class main {
 		}
 	}
 
-	
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
