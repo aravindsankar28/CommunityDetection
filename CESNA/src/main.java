@@ -17,6 +17,9 @@ public class main {
 	int maxIter;
 	double delta;
 	double beta;
+	int THREADS;
+	int V;
+	int E;
 
 	public main(int com) {
 		C = com;
@@ -30,6 +33,7 @@ public class main {
 		lambda = 1;
 		maxIter = 1000;
 		beta = 0.7;
+		THREADS = 4;
 	}
 
 	private void readGraph(String graphfilename, String attrfilename) throws Exception {
@@ -43,6 +47,7 @@ public class main {
 				G.put(e0, new ArrayList<Integer>());
 			}
 			G.get(e0).add(e1);
+			E ++;
 		}
 		br.close();
 		br = new BufferedReader(new FileReader(attrfilename));
@@ -64,6 +69,8 @@ public class main {
 			}
 		}
 		delta = -Math.log(1 - 1.0 / G.size());
+		V = G.size();
+		E /=2;
 	}
 
 	private void initAffiliations() {
@@ -184,8 +191,7 @@ public class main {
 			// System.out.println("lg = "+graphLikelihood(F_copy));
 			// System.out.println("fx new = "+fx_new);
 			// System.out.println(MathFunctions.L2NormSq(updates));
-			System.out.println(fx_new - fx);
-
+			
 			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) / 2.0) {
 				t = beta * t;
 			} else
@@ -206,16 +212,16 @@ public class main {
 			}
 		}
 		ArrayList<ArrayList<Integer>> nodeSplits = new ArrayList<>();
-		for (int i = 0; i < 4; i++)
+		for (int i = 0; i < THREADS; i++)
 			nodeSplits.add(new ArrayList<>());
 
 		int i = 0;
 		for (int node : G.keySet()) {
-			nodeSplits.get(i % 4).add(node);
+			nodeSplits.get(i % THREADS).add(node);
 			i++;
 		}
 
-		UpdateFThread[] threads = new UpdateFThread[4];
+		UpdateFThread[] threads = new UpdateFThread[THREADS];
 		
 		for (int j = 0; j < threads.length; j++) {
 			threads[j] = new UpdateFThread(sumFvc, nodeSplits.get(j));
@@ -352,9 +358,10 @@ public class main {
 
 			updateFDriver();
 			updateW();
-			System.out.println(eta);
-			System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0 * (iter + 1)));
+			
+			//System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0 * (iter + 1)));
 		}
+		System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0));
 	}
 
 	void getCommunities() {
@@ -378,17 +385,28 @@ public class main {
 			System.out.println();
 		}
 	}
+	
+	int numberOfParameters()
+	{
+		return G.size()*C + numAttr*C;
+	}
+	
+	double driver(String graphfilename, String attrfilename) throws Exception
+	{
+		// String graphfilename = "facebook/0.edges";
+		// String attrfilename = "facebook/0.feat";
+		readGraph(graphfilename, attrfilename);
+		initAffiliations();
+		gradientAscent();
+		getCommunities();
+		return likelihood(F, W);
+	}
 
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
-		String graphfilename = "facebook/0.edges";
-		String attrfilename = "facebook/0.feat";
-		m.readGraph(graphfilename, attrfilename);
-		m.initAffiliations();
-		System.out.println("Init done");
-		m.gradientAscent();
-		m.getCommunities();
+		m.driver("facebook/107.edges", "facebook/107.feat");
+		
 	}
 
 }
