@@ -33,7 +33,7 @@ public class main {
 		lambda = 1;
 		maxIter = 1000;
 		beta = 0.7;
-		THREADS = 4;
+		THREADS = 8;
 	}
 
 	private void readGraph(String graphfilename, String attrfilename) throws Exception {
@@ -47,7 +47,7 @@ public class main {
 				G.put(e0, new ArrayList<Integer>());
 			}
 			G.get(e0).add(e1);
-			E ++;
+			E++;
 		}
 		br.close();
 		br = new BufferedReader(new FileReader(attrfilename));
@@ -70,7 +70,7 @@ public class main {
 		}
 		delta = -Math.log(1 - 1.0 / G.size());
 		V = G.size();
-		E /=2;
+		E /= 2;
 	}
 
 	private void initAffiliations() {
@@ -119,7 +119,7 @@ public class main {
 				ArrayList<Double> Fu = new ArrayList<>();
 				for (int c = 0; c < C; c++) {
 					if (c == community) {
-						Fu.add(1-bias + (bias * r.nextDouble()));
+						Fu.add(1 - bias + (bias * r.nextDouble()));
 					} else {
 						Fu.add(bias * r.nextDouble());
 					}
@@ -191,7 +191,7 @@ public class main {
 			// System.out.println("lg = "+graphLikelihood(F_copy));
 			// System.out.println("fx new = "+fx_new);
 			// System.out.println(MathFunctions.L2NormSq(updates));
-			
+
 			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) / 2.0) {
 				t = beta * t;
 			} else
@@ -222,7 +222,7 @@ public class main {
 		}
 
 		UpdateFThread[] threads = new UpdateFThread[THREADS];
-		
+
 		for (int j = 0; j < threads.length; j++) {
 			threads[j] = new UpdateFThread(sumFvc, nodeSplits.get(j));
 		}
@@ -257,6 +257,21 @@ public class main {
 
 		public void run() {
 			updates = updateF(sumFvc, nodes);
+		}
+	}
+	
+	class UpdateWThread extends Thread {
+
+		ArrayList<Integer> attributes;
+		
+		HashMap<Integer, ArrayList<Double>> updates;
+
+		UpdateWThread(ArrayList<Integer> attributes) {
+			this.attributes = attributes;
+		}
+
+		public void run() {
+			updates = updateW(attributes);
 		}
 	}
 
@@ -321,13 +336,14 @@ public class main {
 
 	void updateW() {
 		HashMap<Integer, ArrayList<Double>> newW = new HashMap<>();
-		for (int u : G.keySet()) {
-			for (int k = 0; k < numAttr; k++) {
-				double z = X.get(u).get(k) ? 1 : 0;
-				double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(W.get(k), F.get(u))));
-				double diff = (z - Quk);
-				newW.put(k, new ArrayList<Double>());
-				for (int c = 0; c < C; c++) {
+
+		for (int k = 0; k < numAttr; k++) {
+			newW.put(k, new ArrayList<Double>());
+			for (int c = 0; c < C; c++) {
+				for (int u : G.keySet()) {
+					double z = X.get(u).get(k) ? 1 : 0;
+					double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(W.get(k), F.get(u))));
+					double diff = (z - Quk);
 					double update = 0.0;
 					update += diff * F.get(u).get(c);
 					update *= alpha;
@@ -336,6 +352,61 @@ public class main {
 					else
 						update += lambda;
 					newW.get(k).add(update * eta);
+				}
+			}
+		}
+
+		W = new HashMap<>(newW);
+	}
+
+	HashMap<Integer, ArrayList<Double>> updateW(ArrayList<Integer> attributes) {
+		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
+		for (int k : attributes) {
+			updates.put(k, new ArrayList<Double>());
+			for (int c = 0; c < C; c++) {
+				for (int u : G.keySet()) {
+					double z = X.get(u).get(k) ? 1 : 0;
+					double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(W.get(k), F.get(u))));
+					double diff = (z - Quk);
+					double update = 0.0;
+					update += diff * F.get(u).get(c);
+					update *= alpha;
+					if (W.get(k).get(c) > 0)
+						update -= lambda;
+					else
+						update += lambda;
+					updates.get(k).add(update * eta);
+				}
+			}
+		}
+		return updates;
+	}
+
+	void updateWDriver() throws InterruptedException {
+		ArrayList<ArrayList<Integer>> attributeSplits = new ArrayList<>();
+		for (int i = 0; i < THREADS; i++)
+			attributeSplits.add(new ArrayList<>());
+
+		for (int x = 0; x < numAttr; x++) {
+			attributeSplits.get(x % THREADS).add(x);
+		}
+		UpdateWThread[] threads = new UpdateWThread[THREADS];
+
+		for (int j = 0; j < threads.length; j++) {
+			threads[j] = new UpdateWThread(attributeSplits.get(j));
+		}
+
+		for (UpdateWThread thread : threads) {
+			thread.start();
+		}
+		for (UpdateWThread thread : threads) {
+			thread.join();
+		}
+
+		for (UpdateWThread thread : threads) {
+			for (int k : thread.updates.keySet()) {
+				for (int c = 0; c < C; c++) {
+					W.get(k).set(c,  W.get(k).get(c) + eta * thread.updates.get(k).get(c));
 				}
 			}
 		}
@@ -357,9 +428,11 @@ public class main {
 			previousLikelihood = likelihood;
 
 			updateFDriver();
-			updateW();
-			
-			//System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0 * (iter + 1)));
+			updateWDriver();
+			// updateW();
+
+			// System.out.println("Time " + (System.currentTimeMillis() -
+			// startTime) / (1000.0 * (iter + 1)));
 		}
 		System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0));
 	}
@@ -385,14 +458,12 @@ public class main {
 			System.out.println();
 		}
 	}
-	
-	int numberOfParameters()
-	{
-		return G.size()*C + numAttr*C;
+
+	int numberOfParameters() {
+		return G.size() * C + numAttr * C;
 	}
-	
-	double driver(String graphfilename, String attrfilename) throws Exception
-	{
+
+	double driver(String graphfilename, String attrfilename) throws Exception {
 		// String graphfilename = "facebook/0.edges";
 		// String attrfilename = "facebook/0.feat";
 		readGraph(graphfilename, attrfilename);
@@ -405,8 +476,8 @@ public class main {
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
-		m.driver("facebook/107.edges", "facebook/107.feat");
-		
+		m.driver("facebook/0.edges", "facebook/0.feat");
+
 	}
 
 }
