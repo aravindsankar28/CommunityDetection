@@ -1,8 +1,6 @@
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
 
 public class main {
 	HashMap<Integer, ArrayList<Integer>> G;
@@ -16,7 +14,6 @@ public class main {
 	double lambda;
 	int maxIter;
 	double delta;
-	double beta;
 	int THREADS;
 	int V;
 	int E;
@@ -32,8 +29,7 @@ public class main {
 		eta = 0.001;
 		lambda = 1;
 		maxIter = 1000;
-		beta = 0.7;
-		THREADS = 8;
+		THREADS = 4;
 	}
 
 	private void readGraph(String graphfilename, String attrfilename) throws Exception {
@@ -155,47 +151,92 @@ public class main {
 	}
 
 	// Lx
-	double attributeLikelihood(HashMap<Integer, ArrayList<Double>> W) {
+	double attributeLikelihood(HashMap<Integer, ArrayList<Double>> W, HashMap<Integer, ArrayList<Double>> F) {
 		double Lx = 0.0;
 		for (int u : G.keySet()) {
 			for (int k = 0; k < numAttr; k++) {
 				boolean x = X.get(u).get(k);
 				double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(W.get(k), F.get(u))));
+
 				int z = x ? 1 : 0;
 				Lx += z * Math.log(Quk) + (1 - z) * Math.log(1 - Quk);
+				if (Double.isNaN(Lx)) {
+					System.out.println("Quk = " + Quk);
+					System.out.println(MathFunctions.dotProduct(W.get(k), F.get(u)));
+					System.exit(0);
+				}
 			}
 		}
 		return Lx;
 	}
 
 	double likelihood(HashMap<Integer, ArrayList<Double>> F, HashMap<Integer, ArrayList<Double>> W) {
-		return (1 - alpha) * graphLikelihood(F) + alpha * attributeLikelihood(W) - lambda * MathFunctions.L1Norm(W);
+		return (1 - alpha) * graphLikelihood(F) + alpha * attributeLikelihood(W, F) - lambda * MathFunctions.L1Norm(W);
 	}
 
-	double lineSearch(HashMap<Integer, ArrayList<Double>> updates) {
-		double fx = (1 - alpha) * graphLikelihood(F) + (alpha) * attributeLikelihood(W);
-		// System.out.println(fx);
-		double t = 0.001;
+	double lineSearchW(HashMap<Integer, ArrayList<Double>> updates) {
+
+		double fx = (alpha) * attributeLikelihood(W, F) - lambda * MathFunctions.L1Norm(W);
+
+		double t = 0.01;
+		double beta = 0.3;
 
 		boolean toContinue = true;
+		int iter = 0;
 		do {
-			HashMap<Integer, ArrayList<Double>> F_copy = new HashMap<>(F);
-			for (int u : G.keySet()) {
+			HashMap<Integer, ArrayList<Double>> W_copy = new HashMap<>();
+			// System.out.println("t = " + t);
+			for (int k = 0; k < numAttr; k++) {
+				W_copy.put(k, new ArrayList<Double>());
 				for (int c = 0; c < C; c++) {
-					F_copy.get(u).set(c, Math.max(0, F_copy.get(u).get(c) + (t * updates.get(u).get(c))));
+					W_copy.get(k).add(W.get(k).get(c) + (t * updates.get(k).get(c)));
 				}
 			}
-			// System.out.println(t);
-			// System.out.println(F_copy);
-			double fx_new = (1 - alpha) * graphLikelihood(F_copy) + (alpha) * attributeLikelihood(W);
-			// System.out.println("lg = "+graphLikelihood(F_copy));
-			// System.out.println("fx new = "+fx_new);
-			// System.out.println(MathFunctions.L2NormSq(updates));
 
-			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) / 2.0) {
+			double fx_new = (alpha) * attributeLikelihood(W_copy, F) - lambda * MathFunctions.L1Norm(W_copy);
+			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.01) {
 				t = beta * t;
 			} else
 				toContinue = false;
+			iter++;
+			if (iter == 10)
+				return t;
+
+		} while (toContinue);
+		return t;
+	}
+
+	double lineSearch(HashMap<Integer, ArrayList<Double>> updates) {
+		double beta = 0.6;
+		double fx = (1 - alpha) * graphLikelihood(F) + (alpha) * attributeLikelihood(W, F);
+		double t = 0.01;
+		int iter = 0;
+		boolean toContinue = true;
+		do {
+			HashMap<Integer, ArrayList<Double>> F_copy = new HashMap<>();
+			boolean nonNegative = true;
+			// System.out.println("t = " + t);
+			for (int u : G.keySet()) {
+				F_copy.put(u, new ArrayList<Double>());
+				for (int c = 0; c < C; c++) {
+					F_copy.get(u).add(Math.max(0, F.get(u).get(c) + (t * updates.get(u).get(c))));
+				}
+			}
+
+			if (nonNegative == false) {
+				t = beta * t;
+				continue;
+			}
+
+			double fx_new = (1 - alpha) * graphLikelihood(F_copy) + (alpha) * attributeLikelihood(W, F_copy);
+			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.01) {
+				t = beta * t;
+			} else
+				toContinue = false;
+
+			iter++;
+			if (iter == 10)
+				return t;
 
 		} while (toContinue);
 		return t;
@@ -203,7 +244,7 @@ public class main {
 
 	void updateFDriver() throws InterruptedException {
 		double[] sumFvc = new double[C];
-		HashMap<Integer, ArrayList<Double>> updates;
+		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
 
 		for (int v : G.keySet()) {
 			ArrayList<Double> Fv = F.get(v);
@@ -236,9 +277,21 @@ public class main {
 
 		for (UpdateFThread thread : threads) {
 			for (int u : thread.updates.keySet()) {
+				updates.put(u, new ArrayList<Double>());
 				for (int c = 0; c < C; c++) {
-					F.get(u).set(c, Math.max(0.0, F.get(u).get(c) + eta * thread.updates.get(u).get(c)));
+					updates.get(u).add(thread.updates.get(u).get(c));
+					// F.get(u).set(c, Math.max(0.0, F.get(u).get(c) + eta *
+					// thread.updates.get(u).get(c)));
 				}
+			}
+		}
+
+		eta = lineSearch(updates);
+		System.out.println("Final eta " + eta);
+
+		for (int u : updates.keySet()) {
+			for (int c = 0; c < C; c++) {
+				F.get(u).set(c, Math.max(0.0, F.get(u).get(c) + eta * updates.get(u).get(c)));
 			}
 		}
 
@@ -259,11 +312,11 @@ public class main {
 			updates = updateF(sumFvc, nodes);
 		}
 	}
-	
+
 	class UpdateWThread extends Thread {
 
 		ArrayList<Integer> attributes;
-		
+
 		HashMap<Integer, ArrayList<Double>> updates;
 
 		UpdateWThread(ArrayList<Integer> attributes) {
@@ -325,9 +378,6 @@ public class main {
 				updates.get(u).add(update);
 			}
 		}
-
-		// eta = lineSearch(updates);
-		// System.out.println(eta);
 
 		// F = new HashMap<>(newF);
 		// System.out.println(F);
@@ -403,13 +453,27 @@ public class main {
 			thread.join();
 		}
 
+		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
+
 		for (UpdateWThread thread : threads) {
 			for (int k : thread.updates.keySet()) {
+				updates.put(k, new ArrayList());
 				for (int c = 0; c < C; c++) {
-					W.get(k).set(c,  W.get(k).get(c) + eta * thread.updates.get(k).get(c));
+					updates.get(k).add(thread.updates.get(k).get(c));
+					// W.get(k).set(c, W.get(k).get(c) + eta *
+					// thread.updates.get(k).get(c));
 				}
 			}
 		}
+		eta = lineSearchW(updates);
+		// eta = 0.0001;
+
+		for (int k : updates.keySet()) {
+			for (int c = 0; c < C; c++) {
+				W.get(k).set(c, W.get(k).get(c) + eta * updates.get(k).get(c));
+			}
+		}
+
 	}
 
 	void gradientAscent() throws InterruptedException {
@@ -422,12 +486,13 @@ public class main {
 			if (previousLikelihood != -1) {
 				// System.out.println((likelihood - previousLikelihood) /
 				// previousLikelihood);
-				if ((previousLikelihood - likelihood) / previousLikelihood < 0.00001)
+				if ((previousLikelihood - likelihood) / previousLikelihood < 0.0001)
 					break;
 			}
 			previousLikelihood = likelihood;
 
 			updateFDriver();
+			// System.out.println("Likelihood after F update at iter " + iter + " " + likelihood(F, W));
 			updateWDriver();
 			// updateW();
 
@@ -476,7 +541,7 @@ public class main {
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
-		m.driver("facebook/0.edges", "facebook/0.feat");
+		m.driver("facebook/107.edges", "facebook/107.feat");
 
 	}
 
