@@ -1,7 +1,6 @@
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
 
 public class main {
 	/*
@@ -17,7 +16,7 @@ public class main {
 	boolean[][] X; // Done
 	double[][] F;
 	double[][] W;
-
+	
 	int C; // No of communities
 	int numAttr;
 	double alpha;
@@ -209,13 +208,10 @@ public class main {
 		return (1 - alpha) * graphLikelihood(F) + alpha * attributeLikelihood(W, F) - lambda * MathFunctions.L1Norm(W);
 	}
 
-	double lineSearchW(HashMap<Integer, ArrayList<Double>> updates) {
-
+	double lineSearchW(double[][] updates) {
 		double fx = (alpha) * attributeLikelihood(W, F) - lambda * MathFunctions.L1Norm(W);
-
-		double t = 0.01;
+		double t = 1;
 		double beta = 0.3;
-
 		boolean toContinue = true;
 		int iter = 0;
 		do {
@@ -223,25 +219,25 @@ public class main {
 			// System.out.println("t = " + t);
 			for (int k = 0; k < numAttr; k++) {
 				for (int c = 0; c < C; c++) {
-					W_copy[k][c] = W[k][c] + (t * updates.get(k).get(c));
+					W_copy[k][c] = W[k][c] + (t * updates[k][c]);
 				}
 			}
 
 			double fx_new = (alpha) * attributeLikelihood(W_copy, F) - lambda * MathFunctions.L1Norm(W_copy);
-			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.01) {
+			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.05) {
 				t = beta * t;
 			} else
 				toContinue = false;
 			iter++;
-			if (iter == 10)
-				return t;
+			if (iter>  5)
+				return 0.0;
 
 		} while (toContinue);
 		return t;
 	}
 
-	double lineSearch(HashMap<Integer, ArrayList<Double>> updates) {
-		double beta = 0.6;
+	double lineSearch(double[][] updates) {
+		double beta = 0.3;
 		double fx = (1 - alpha) * graphLikelihood(F) + (alpha) * attributeLikelihood(W, F);
 		double t = 0.01;
 		int iter = 0;
@@ -252,7 +248,7 @@ public class main {
 			// System.out.println("t = " + t);
 			for (int u = 0; u < G.size(); u++) {
 				for (int c = 0; c < C; c++) {
-					F_copy[u][c] = Math.max(0, F[u][c] + (t * updates.get(u).get(c)));
+					 F_copy[u][c] = Math.max(0, F[u][c] + (t * updates[u][c]));
 				}
 			}
 
@@ -262,14 +258,14 @@ public class main {
 			}
 
 			double fx_new = (1 - alpha) * graphLikelihood(F_copy) + (alpha) * attributeLikelihood(W, F_copy);
-			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.01) {
+			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.05) {
 				t = beta * t;
 			} else
 				toContinue = false;
 
 			iter++;
-			if (iter == 10)
-				return t;
+			if (iter > 5)
+				return 0.0;
 
 		} while (toContinue);
 		return t;
@@ -277,7 +273,7 @@ public class main {
 
 	void updateFDriver() throws InterruptedException {
 		double[] sumFvc = new double[C];
-		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
+		double[][] updates = new double[V][C];
 
 		for (int v = 0; v < G.size(); v++) {
 			double[] Fv = F[v];
@@ -285,20 +281,19 @@ public class main {
 				sumFvc[c] += Fv[c];
 			}
 		}
-		ArrayList<ArrayList<Integer>> nodeSplits = new ArrayList<>();
-		for (int i = 0; i < THREADS; i++)
-			nodeSplits.add(new ArrayList<>());
+		int splitLen = (int) Math.ceil(G.size() * 1.0 / THREADS);
+		int[] startIndices = new int[THREADS];
+		int[] endIndices = new int[THREADS];
 
-		int i = 0;
-		for (int node = 0; node < G.size(); node++) {
-			nodeSplits.get(i % THREADS).add(node);
-			i++;
+		for (int i = 0; i < THREADS; i++) {
+			startIndices[i] = splitLen * i;
+			endIndices[i] = Math.min(splitLen * (i + 1) - 1, V - 1);
 		}
 
 		UpdateFThread[] threads = new UpdateFThread[THREADS];
 
 		for (int j = 0; j < threads.length; j++) {
-			threads[j] = new UpdateFThread(sumFvc, nodeSplits.get(j));
+			threads[j] = new UpdateFThread(sumFvc, startIndices[j], endIndices[j], updates);
 		}
 
 		for (UpdateFThread thread : threads) {
@@ -308,60 +303,69 @@ public class main {
 			thread.join();
 		}
 
-		for (UpdateFThread thread : threads) {
-			for (int u : thread.updates.keySet()) {
-				updates.put(u, new ArrayList<Double>());
+		for (int j = 0; j < THREADS; j++) {
+
+			for (int u = startIndices[j]; u <= endIndices[j]; u++) {
 				for (int c = 0; c < C; c++) {
-					updates.get(u).add(thread.updates.get(u).get(c));
-					// F.get(u).set(c, Math.max(0.0, F.get(u).get(c) + eta *
-					// thread.updates.get(u).get(c)));
+					updates[u][c] = threads[j].updates[u][c];
 				}
 			}
 		}
+		// eta = 0.001;
+		eta = lineSearch(updates);
+		System.out.println("Eta for F : " + eta);
 
-		// eta = lineSearch(updates);
-		System.out.println("Final eta " + eta);
-		
 		for (int u = 0; u < G.size(); u++) {
 			for (int c = 0; c < C; c++) {
-				F[u][c] = Math.max(0.0, F[u][c] + eta * updates.get(u).get(c));
+				F[u][c] = Math.max(0.0, F[u][c] + eta * updates[u][c]);
 			}
 		}
 	}
 
 	class UpdateFThread extends Thread {
 
-		ArrayList<Integer> nodes;
+		// ArrayList<Integer> nodes;
 		double[] sumFvc;
-		HashMap<Integer, ArrayList<Double>> updates;
+		// HashMap<Integer, ArrayList<Double>> updates;
+		int startIndex;
+		int endIndex;
+		double[][] updates;
 
-		UpdateFThread(double[] sumFvc, ArrayList<Integer> nodes) {
+		UpdateFThread(double[] sumFvc, int startIndex, int endIndex, double[][] updates) {
 			this.sumFvc = sumFvc;
-			this.nodes = nodes;
+			this.startIndex = startIndex;
+			this.endIndex = endIndex;
+			this.updates = updates;
 		}
 
 		public void run() {
-			updates = updateF(sumFvc, nodes);
+			updates = updateF(sumFvc, startIndex, endIndex, updates);
 		}
 	}
 
 	class UpdateWThread extends Thread {
 
 		ArrayList<Integer> attributes;
-		HashMap<Integer, ArrayList<Double>> updates;
+		// HashMap<Integer, ArrayList<Double>> updates;
+		double[][] updates;
+		int startIndex;
+		int endIndex;
 
-		UpdateWThread(ArrayList<Integer> attributes) {
-			this.attributes = attributes;
+		UpdateWThread(int startIndex, int endIndex, double[][] updates) {
+			// this.attributes = attributes;
+			this.startIndex = startIndex;
+			this.endIndex = endIndex;
+			this.updates = updates;
 		}
 
 		public void run() {
-			updates = updateW(attributes);
+			updates = updateW(startIndex, endIndex, updates);
 		}
 	}
 
-	HashMap<Integer, ArrayList<Double>> updateF(double[] sumFvc, ArrayList<Integer> nodes) {
+	double[][] updateF(double[] sumFvc, int startIndex, int endIndex, double[][] updates) {
 		// HashMap<Integer, ArrayList<Double>> newF = new HashMap<>();
-		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
+		// HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
 		/*
 		 * double[] sumFvc = new double[C];
 		 * 
@@ -369,9 +373,9 @@ public class main {
 		 * c = 0; c < C; c++) { sumFvc[c] += Fv.get(c); } }
 		 */
 
-		for (int u : nodes) {
+		for (int u = startIndex; u <= endIndex; u++) {
 			// newF.put(u, new ArrayList<Double>());
-			updates.put(u, new ArrayList<Double>());
+			// updates.put(u, new ArrayList<Double>());
 			double[] derivative_G = new double[C];
 			double[] derivative_X = new double[C];
 			double[] diff = new double[C];
@@ -405,7 +409,8 @@ public class main {
 
 			for (int c = 0; c < C; c++) {
 				double update = (1 - alpha) * derivative_G[c] + (alpha) * derivative_X[c];
-				updates.get(u).add(update);
+				updates[u][c] = update;
+				// updates.get(u).add(update);
 			}
 		}
 
@@ -440,41 +445,44 @@ public class main {
 		// W = new HashMap<>(newW);
 	}
 
-	HashMap<Integer, ArrayList<Double>> updateW(ArrayList<Integer> attributes) {
-		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
-		for (int k : attributes) {
-			updates.put(k, new ArrayList<Double>());
+	double[][] updateW(int startIndex, int endIndex, double[][] updates) {
+
+		for (int k = startIndex; k <= endIndex; k++) {
 			for (int c = 0; c < C; c++) {
+				double update = 0.0;
 				for (int u = 0; u < G.size(); u++) {
 					double z = X[u][k] ? 1 : 0;
 					double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(W[k], F[u])));
 					double diff = (z - Quk);
-					double update = 0.0;
 					update += diff * F[u][c];
-					update *= alpha;
-					if (W[k][c] > 0)
-						update -= lambda;
-					else
-						update += lambda;
-					updates.get(k).add(update * eta);
 				}
+				update *= alpha;
+				if (W[k][c] > 0)
+					update -= lambda;
+				else
+					update += lambda;
+				updates[k][c] = update * eta;
 			}
 		}
 		return updates;
 	}
 
 	void updateWDriver() throws InterruptedException {
-		ArrayList<ArrayList<Integer>> attributeSplits = new ArrayList<>();
-		for (int i = 0; i < THREADS; i++)
-			attributeSplits.add(new ArrayList<>());
 
-		for (int x = 0; x < numAttr; x++) {
-			attributeSplits.get(x % THREADS).add(x);
+		int splitLen = (int) Math.ceil(numAttr * 1.0 / THREADS);
+		int[] startIndices = new int[THREADS];
+		int[] endIndices = new int[THREADS];
+
+		for (int i = 0; i < THREADS; i++) {
+			startIndices[i] = splitLen * i;
+			endIndices[i] = Math.min(splitLen * (i + 1) - 1, numAttr - 1);
 		}
+
 		UpdateWThread[] threads = new UpdateWThread[THREADS];
+		double[][] updates = new double[numAttr][C];
 
 		for (int j = 0; j < threads.length; j++) {
-			threads[j] = new UpdateWThread(attributeSplits.get(j));
+			threads[j] = new UpdateWThread(startIndices[j], endIndices[j], updates);
 		}
 
 		for (UpdateWThread thread : threads) {
@@ -484,22 +492,23 @@ public class main {
 			thread.join();
 		}
 
-		HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
+		// HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
 
-		for (UpdateWThread thread : threads) {
-			for (int k : thread.updates.keySet()) {
-				updates.put(k, new ArrayList<Double>());
+		for (int j = 0; j < THREADS; j++) {
+			for (int k = startIndices[j]; k <= endIndices[j]; k++) {
 				for (int c = 0; c < C; c++) {
-					updates.get(k).add(thread.updates.get(k).get(c));
+					updates[k][c] = threads[j].updates[k][c];
 				}
 			}
 		}
-		// eta = lineSearchW(updates);
+		eta = lineSearchW(updates);
 		// eta = 0.0001;
-		
-		for (int k = 0 ; k < numAttr; k ++) {
+		System.out.println("Eta for W : " + eta);
+	
+
+		for (int k = 0; k < numAttr; k++) {
 			for (int c = 0; c < C; c++) {
-				W[k][c] = W[k][c] + eta * updates.get(k).get(c);
+				W[k][c] = W[k][c] + eta * updates[k][c];
 			}
 		}
 
@@ -515,7 +524,7 @@ public class main {
 			if (previousLikelihood != -1) {
 				// System.out.println((likelihood - previousLikelihood) /
 				// previousLikelihood);
-				if ((previousLikelihood - likelihood) / previousLikelihood < 0.0001)
+				if ((previousLikelihood - likelihood) / previousLikelihood < 0.00001)
 					break;
 			}
 			previousLikelihood = likelihood;
@@ -563,7 +572,7 @@ public class main {
 		// String attrfilename = "facebook/0.feat";
 		readGraph(graphfilename, attrfilename);
 		initAffiliations();
-		
+
 		gradientAscent();
 		getCommunities();
 		return 0.0;
@@ -573,7 +582,7 @@ public class main {
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
 		main m = new main(10);
-		m.driver("facebook/0.edges", "facebook/0.feat");
+		m.driver("facebook/107.edges", "facebook/107.feat");
 
 	}
 
