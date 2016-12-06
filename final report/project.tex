@@ -1,0 +1,120 @@
+	              
+% --------------------------------------------------------------
+% This is all preamble stuff that you don't have to worry about.
+% Head down to where it says "Start here"
+% --------------------------------------------------------------
+ 
+\documentclass[11pt]{article}
+\usepackage{ulem}
+\usepackage[margin=1in]{geometry} 
+\usepackage{graphicx}
+\usepackage{amsmath,amsthm,amssymb} 
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newenvironment{theorem}[2][Theorem]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{lemma}[2][Lemma]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{exercise}[2][Exercise]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{reflection}[2][Reflection]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{proposition}[2][Proposition]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+\newenvironment{corollary}[2][Corollary]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+ \usepackage{amsmath}
+\begin{document}
+ 
+% --------------------------------------------------------------
+%                         Start here
+% --------------------------------------------------------------
+ 
+%\renewcommand{\qedsymbol}{\filledbox}
+ 
+\title{CS 498: Project Midterm Report}%replace X with the appropriate number
+\author{Adit Krishnan, UIN: 659913017, Net ID: aditk2 , Aravind Sankar, UIN: 671514664, Net ID: asankar3 \\} %if necessary, replace with your course title
+\maketitle
+
+
+\section{Introduction}
+We address the task of discovering social circles in a user's ego network in this project.  In addition to the baseline algorithms reported in the mid-term submission, we implement two algorithms for solving this problem. The first algorithm CESNA \cite{cesna} is a state of the art technique for detecting overlapping communities in a social network. We provide a best-effort implementation and report the results that we obtain. The second algorithm that we present here is our own model. We draw motivation from some ideas of existing techniques and our analysis of the datasets \cite{SNAP dataset}.
+In the next section, we provide a very brief description of the main idea behind CESNA. 
+After that, we describe our proposed model in detail. Finally, we present the results of the two algorithms on the facebook ego-network dataset.
+
+\section{Algorithm 1 - CESNA}
+This paper proposes a probabilistic model for generating network topology and node attributes. They assume that each node in the network has a community membership which determines the edges observed in the network. Each community also has a relevance score with respect to each attribute. The community memberships along with attribute specific relevance score for each community are assumed to generate the observed network and attributes. They develop a gradient ascent algorithm to optimize their likelihood function.
+\section{Algorithm 2 - Our model}
+We first provide the main motivation behind the design of our model.
+\subsection{Motivation}
+We propose our model by drawing the basic idea of community memberships for each node from CESNA. However, we aim to simplify the network and attribute generation process and improve it using insights that we obtain from our dataset. First, we analyzed the ground truth communities in the given dataset to determine the edge density for each community. In Table 1, we show the mean value of density in each ego-network, along with the standard deviation. We can clearly see that there is a significant variation in the density of the ground truth communities. This shows that effect of edge formation due to each community is different and depends on the density of the community. We capture this explicitly in our model by allowing each community to have a different influence in edge formation.  \\[3pt]
+
+The second insight is that node attributes in ego-networks tend to be very sparse and noisy. This means that explicitly modeling the generation of node attributes based on community memberships could lead to poor detected communities. Instead, we use the node attributes to capture the profile similarity between a pair of users, which is now used to guide the formation of edges in a network based on community memberships of each node. This also has an added benefit in that the complexity of the model is reduced greatly as we only model the likelihood of the observed edges in the network. To summarize, we model the likelihood of observing the network edges based on community memberships of each node, community density and node attributes. We define a likelihood function to capture this idea and propose a parallel optimization algorithm to infer the parameters of our model. We find that our model is much faster than CESNA (our implementation) in practice.
+Next, we provide a formal description of our model. 
+
+\subsection{Model formulation}
+Given an undirected graph $G(V,E)$ with binary node attributes $X$,  the goal is to detect $C$ communities that could be overlapping. For now, we assume that the number of communities $C$ is given.  We describe the procedure to automatically find the best value of $C$ later.
+We assume that there are $N$ nodes in the network $G$ and each node has $K$ attributes. We denote the network by $G$, and attributes by $X$.
+Each node has a binary attribute vector denoted by $\mathbf{X_u}$ of size $K$,  
+where $\mathbf{X_u} (k) = 1$ indicates the presence of attribute $k$ for node $u$ in the network. In addition to these basic observed variables, we have node community memberships $F$ and community density weights $W$. For community memberships $F$, we assume that each node $u$ has a non-negative affiliation weight $F_{uc}$ to community $c$. Each community has a non-negative weight $W_c$ which represents the density of the community. First we describe how similarity of two users is modeled using their node attributes. 
+
+\subsubsection*{User similarity}
+We model profile similarity of a pair of users $(u,v)$ using their node attributes. We use the cosine similarity to model this similarity as below : 
+\[ sim_{uv} = \frac{\mathbf{X_u} \textbf{.} \mathbf{X_v} }{\| \mathbf{X_u}\| \|  \mathbf{X_v} \|}\]
+This profile similarity will be used in combination user community memberships to model the likelihood of observing the network. Next, we describe a generative process of observing the links in the network.
+\subsubsection*{Link generation}
+In this section, we  describe how network structure depends on the different factors  outlined earlier and provide a mathematical formulation of the same.  First, we describe the effect of node community memberships.
+Node community affiliations positively influence the likelihood that a pair of nodes is connected. The degree of influence depends on the communities that the pair of nodes belong to. Each community influences the link probability independently but proportional to the density of the community. Using these intuitions, we model this influence of community memberships as proportional to $F_{uc} F_{vc} W_c$ for a pair of users $(u,v)$ w.r.t. community $c$.
+Next, the link probability between a pair of nodes also depends on their user profile similarity, which is modeled as proportional to $sim_{uv}$.  We combine the two effects to model the probability that two nodes $u, v$ belonging to a community $c$ are connected as : 
+
+\[ P_{uv} (c) = 1 - \exp(- \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) \frac{sim_{uv}}{C} \right\rbrace ) \]
+
+Here, $\alpha$ is a hyper-parameter that controls the effect of the two factors in modeling the link probability. We assume that each community $c$ connects nodes $u,v$ independently with probability $P_{uv} (c)$.  For $u$ and $v$ to be connected, it must be connected by at least one community which gives a link generation probability $P_{uv}$ as : 
+\begin{align*}
+P_{uv} &=  1 - \prod_{c=1}^C (1 - P_{uv}(c) )  \\
+ &=1 - \prod_{c=1}^C \exp(- \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) \frac{sim_{uv}}{C} \right\rbrace ) \\
+ &= 1 - \exp( -\sum\limits_{c=1}^C \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) sim_{uv} \right\rbrace)  \\
+ &= 1 - \exp( - ( \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv}))
+\end{align*}
+Here, $\mathbf{F_u}$ denotes the vector of community memberships (of size $C$) for node $u$. $\mathbf{W}$ is a diagonal matrix of size $C \times C$ with entries from $W$.
+This defines the link generation probability in the network. We assume a Multi-Bernoulli process for link generation i.e. each link $(u,v)$ is modeled by a Bernoulli distribution with parameter $P_{uv}$.  This completes the basic formalism of our model. We can clearly observe that the different factors mentioned earlier are captured in modeling this link generation probability. In the section, we describe how to infer communities by formulating a likelihood function that we optimize using gradient ascent. 
+
+\subsection{Community Inference}
+In this section, we describe how we detect network communities by estimating the model parameters from the given data. We aim to infer the values of latent variables $F$ and $W$ based on the observed network and attributes. We note that though the attributes are also observed, we only model the likelihood of the network structure as the attributes are captured in the link generation probability. 
+We define the likelihood of the observed network $G$ as  $P(G \mid F, W, X)$ given by : 
+
+\[ P(G \mid F, W, X)  = \prod_{u, v \in E} P_{uv} \prod_{u,v \notin E} (1 - P_{uv}) \]
+
+To find the optimal $\hat{F}$ and $\hat{W}$,  we optimize the log-likelihood of the observed network as : 
+\begin{align*}
+ \mathcal{L}  &= \log P(G \mid F, W, X)  \\
+ &= \sum\limits_{u,v \in E} \log \Big( 1 - \exp( - ( \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv})) \Big) - \sum\limits_{u, v \notin E} ( \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv})) \\
+\end{align*}
+
+\begin{thebibliography}{3}
+\bibitem{SNAP}
+Leskovec, Jure. "Stanford network analysis package (snap)." URL http://snap. stanford. edu (2013).
+\bibitem{SNAP dataset}
+Leskovec, Jure, and Andrej Krevl. "SNAP Datasets: Stanford large network dataset collection, June 2014." URL: http://snap. stanford. edu/data (2014).
+\bibitem{facebook dataset}
+McAuley, Julian J., and Jure Leskovec. "Learning to Discover Social Circles in Ego Networks." NIPS. Vol. 2012. 2012.
+\bibitem{cesna}
+Yang, Jaewon, Julian McAuley, and Jure Leskovec. "Community detection in networks with node attributes." 2013 IEEE 13th International Conference on Data Mining. IEEE, 2013.
+\bibitem{plsa}
+Hofmann, Thomas. "Probabilistic latent semantic indexing." Proceedings of the 22nd annual international ACM SIGIR conference on Research and development in information retrieval. ACM, 1999.
+\bibitem{lda}
+Blei, David M., Andrew Y. Ng, and Michael I. Jordan. "Latent dirichlet allocation." Journal of machine Learning research 3.Jan (2003): 993-1022.
+\bibitem{l1}
+ L. Akoglu, H. Tong, B. Meeder, and C. Faloutsos. PICS: Parameter-free
+Identification of Cohesive Subgroups in Large Attributed Graphs. SDM
+’12, 2012.
+\bibitem{l2}
+M. Ester, R. Ge, B. Gao, Z. Hu, and B. Ben-Moshe. Joint Cluster
+Analysis of Attribute Data and Relationship Data: the Connected kCenter
+Problem. In SDM ’06, 2006.
+\bibitem{johnson}
+Johnson, Stephen C. "Hierarchical clustering schemes." Psychometrika 32.3 (1967): 241-254.
+\end{thebibliography}
+
+\end{document}
