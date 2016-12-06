@@ -39,7 +39,7 @@
 
 
 \section{Introduction}
-We address the task of discovering social circles in a user's ego network in this project.  In addition to the baseline algorithms reported in the mid-term submission, we implement two algorithms for solving this problem. The first algorithm CESNA \cite{cesna} is a state of the art technique for detecting overlapping communities in a social network. We provide a best-effort implementation and report the results that we obtain. The second algorithm that we present here is our own model. We draw motivation from some ideas of existing techniques and our analysis of the datasets \cite{SNAP dataset}.
+We address the task of discovering social circles in a user's ego network in this project. In addition to the baseline algorithms reported in the mid-term submission, we implement two algorithms for solving this problem. The first algorithm CESNA \cite{cesna} is a state of the art technique for detecting overlapping communities in a social network. We provide a best-effort implementation and report the results that we obtain. The second algorithm that we present here is our own model. We draw motivation from some ideas of existing techniques and our analysis of the datasets \cite{SNAP dataset}. 
 In the next section, we provide a very brief description of the main idea behind CESNA. 
 After that, we describe our proposed model in detail. Finally, we present the results of the two algorithms on the facebook ego-network dataset.
 
@@ -74,7 +74,7 @@ Here, $\alpha$ is a hyper-parameter that controls the effect of the two factors 
 \begin{align*}
 P_{uv} &=  1 - \prod_{c=1}^C (1 - P_{uv}(c) )  \\
  &=1 - \prod_{c=1}^C \exp(- \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) \frac{sim_{uv}}{C} \right\rbrace ) \\
- &= 1 - \exp( -\sum\limits_{c=1}^C \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) sim_{uv} \right\rbrace)  \\
+ &= 1 - \exp( -\sum\limits_{c=1}^C \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) \frac{sim_{uv}}{C} \right\rbrace)  \\
  &= 1 - \exp( - ( \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv}))
 \end{align*}
 Here, $\mathbf{F_u}$ denotes the vector of community memberships (of size $C$) for node $u$. $\mathbf{W}$ is a diagonal matrix of size $C \times C$ with entries from $W$.
@@ -90,9 +90,72 @@ To find the optimal $\hat{F}$ and $\hat{W}$,  we optimize the log-likelihood of 
 \begin{align*}
  \mathcal{L}  &= \log P(G \mid F, W, X)  \\
  &= \sum\limits_{u,v \in E} \log \Big( 1 - \exp( - ( \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv})) \Big) - \sum\limits_{u, v \notin E} ( \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv})) \\
+&= \sum\limits_{u,v \in E} \log \Big( 1 - \exp( - \psi(u,v) \Big) - \sum\limits_{u, v \notin E} \psi(u,v) \\[4pt]
+& \text{ where }  \psi(u,v) =  \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv} = \alpha \sum\limits_{c=1}^C F_{uc} W_c F_{vc} + (1 - \alpha) sim_{uv}\\
 \end{align*}
 
+
+Thus, the optimization problem that we aim to solve is: 
+\[ \hat{F}, \hat{W} = \argmax_{F, W \geq 0} \mathcal{L} \]
+To solve this optimization problem, we use gradient ascent. We can easily show that the above likelihood function is concave in both $F$ and $W$. Since we impose non-negativity constraints on $F$ and $W$, we compute gradient updates for each variable and then project onto to space of non-negative real numbers $[0, \infty)$. \\
+  
+\subsubsection*{Gradient update for F}
+In order to update the community memberships $F_u $of a node $u$, we fix all other parameters (the memberships of all other nodes and $W$) and then compute the gradient update for $u$. Thus, the sub-problem that we solve for a node $u$ is given by: 
+\begin{align*}
+\mathcal{L} (F_u) = \sum\limits_{v \in N(u)} \log (1 - \exp(- \psi(u,v)))  - \sum\limits_{v \notin N(u)} \psi(u,v)
+\end{align*}
+Here, $N(u)$ denotes the set of all neighbors of node $u$ in the network $G$.
+We now derive the gradient update rule for each $F_{uc}$, which is given as : 
+\begin{align*}
+\frac{\partial \mathcal{L}}{F_{uc}} &= \sum\limits_{v \in N(u) } \alpha F_{vc} W_c \frac{\exp(- \psi(u,v))}{1 - \exp(-\psi(u,v))} - \sum\limits_{v \notin N(u)} \alpha F_{vc} W_c  \\ 
+&= \sum\limits_{v \in N(u) } \alpha F_{vc} W_c \frac{\exp(- \psi(u,v))}{1 - \exp(-\psi(u,v))}  - \alpha \left\lbrace \sum\limits_{v \in V} F_{vc} W_c - F_{uc} W_c - \sum\limits_{v \in N(u)} F_{vc} \right\rbrace
+\end{align*}
+
+We obtain the first equation by taking the gradient of $\mathcal{L}$ w.r.t $F_{uc}$. We can simplify the summation over all non-neighbors of $u$ by re-writing it as function of just the neighbors of $u$, since the term $\sum\limits_{v \in V} F_{vc}$ can be computed in advance. The update equation for $F_{uc}$ now becomes : 
+\begin{equation}
+ F_{uc}^{n+1} =  \max \Big(0, F_{uc}^n  + \eta_u \frac{\partial \mathcal{L}}{F_{uc}^n}\Big) 
+\end{equation}
+In this equation, $\eta_{u}$ is the learning rate for the node $u$, which is estimated using backtracking line-search \cite{boyd} for performing the gradient updates of node $u$. We note here that the gradient equation (1) here lends itself to easy parallelism. Specifically, we can perform the gradient updates for each node $u$ in parallel, which will leads to great speedup. 
+\subsubsection*{Gradient update for W}
+The gradient update for $W$ is derived in a very similar manner to $F$. We keep the community memberships of all nodes ($F$) fixed when we perform the gradient updates for $W$. Thus, we get the gradient w.r.t $W_c$ as : 
+
+\begin{align*}
+\frac{\partial \mathcal{L}}{W_{c}}  = \sum\limits_{u,v \in E}  \alpha F_{uc} F_{vc} \frac{\exp(- \psi(u,v))}{1 - \exp(-\psi(u,v))} -  \alpha \left\lbrace \sum\limits_{u, v \notin E} \alpha F_{uc} F_{vc} \right\rbrace
+\end{align*}
+The gradient update for $W_c$ is given by : 
+
+\begin{equation}
+W_{c}^{n+1} =  \max \Big(0, W_{c}^n  + \eta_w \frac{\partial \mathcal{L}}{W_{c}^n}\Big) 
+\end{equation}
+In this case also, we can capture gradients  for each community is parallel.  The learning rate $\eta_w$ is again learned using line search. \\[3pt]
+The gradient ascent algorithm is performed by alternatively updating $F$ and $W$ in each iteration.  We stop when the relative change in likelihood is less than 0.001 \% or if 1000 iterations has been reached. We provide a parallel implementation of both our algorithm and CESNA in Java. 
+\subsubsection*{Detecting community assignments}
+The gradient ascent algorithm will give us community memberships for each node $u$ in the network. We use an idea similar to what is used by CESNA to detect communities. To determine if node $u$ belongs to community $c$, we require that $F_{uc}$ is greater than a threshold $\delta_c$ for community $c$. We set $\delta_c$ so that node $u$ belongs to community $c$ if $u$ is connected to other members of $c$ with an edge probability greater than $1/N$. In doing so, we ignore the contribution of attributes to the edge probability. 
+We determine $\delta_c$ as : 
+
+\[ 1 - \exp(1 - \delta_c^2 W_c) \geq \frac{1}{N} \]
+This gives us :
+$$\delta_c = \sqrt{\frac{\log(\frac{N}{N-1})}{W_c}}$$
+
+\subsubsection*{Choosing the best number of communities}
+In order to automatically find the best number of communities $C$, we remove $10 \%$ of the edges from the network to create a hold-out set. Then, we vary $C$ in a range from 5 to 15 and fit the remaining network using our model.  We evaluate the likelihood of the hold-out set using our estimated model. The value of $C$ that gives us maximum likelihood on the held-out set is chosen as the number of communities. \\[5pt]
+In our model, we have only one hyper-parameter $\alpha$ which determines the trade-off between user profile similarity and node community memberships. It is set to 0.5 by default. 
+
+\subsubsection*{Initial community memberships}
+TODO - conductance etc.
+
+\section{Experimental Evaluation}
+\subsection{Setup}
+\subsection{Running Time}
+\subsection{Quality}
+We evaluate the quality of the communities using the evaluation metric proposed in CESNA given by : 
+\[ \frac{1}{2 |C^{*}|} \sum\limits_{C_i^{*} \in C^{*}} \max_{C_j \in C} \delta (C_i^{*}, C_j) + \frac{1}{2 |C|} \sum\limits_{C_j \in C} \max_{C_i^{*} \in C^{*}} \delta (C_i^{*}, C_j) \]
+
+Here, $C$ denotes the  predicted communities and $C^{*}$ the original ground truth communities. $\delta(C_i^{*}, C_j)$ is a similarity measure between the communities $C_i^{*}$ and $C_j$ which we assume to be the Jaccard similarity. The performance of our model and CESNA based on this metric, are shown below :
+
 \begin{thebibliography}{3}
+\bibitem{boyd}
+Boyd, Stephen, and Lieven Vandenberghe. Convex optimization. Cambridge university press, 2004.
 \bibitem{SNAP}
 Leskovec, Jure. "Stanford network analysis package (snap)." URL http://snap. stanford. edu (2013).
 \bibitem{SNAP dataset}
