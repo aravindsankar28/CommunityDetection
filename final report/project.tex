@@ -25,6 +25,8 @@
 \newenvironment{corollary}[2][Corollary]{\begin{trivlist}
 \item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
  \usepackage{amsmath}
+\usepackage{float}
+ \floatplacement{figure}{H}
 \begin{document}
  
 % --------------------------------------------------------------
@@ -33,7 +35,7 @@
  
 %\renewcommand{\qedsymbol}{\filledbox}
  
-\title{CS 498: Project Midterm Report}%replace X with the appropriate number
+\title{CS 498: Project Final Report}%replace X with the appropriate number
 \author{Adit Krishnan, UIN: 659913017, Net ID: aditk2 , Aravind Sankar, UIN: 671514664, Net ID: asankar3 \\} %if necessary, replace with your course title
 \maketitle
 
@@ -153,6 +155,33 @@ We evaluate the quality of the communities using the evaluation metric proposed 
 
 Here, $C$ denotes the  predicted communities and $C^{*}$ the original ground truth communities. $\delta(C_i^{*}, C_j)$ is a similarity measure between the communities $C_i^{*}$ and $C_j$ which we assume to be the Jaccard similarity. The performance of our model and CESNA based on this metric, are shown below :
 
+\begin{table}[H]
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Graph} & \textbf{CESNA} & \textbf{Our Model} \\ \hline
+Graph 0 & 0.1782 & 0.1837 \\ \hline
+Graph 107 & 0.2423 & 0.25264 \\ \hline
+Graph 348 & 0.3952 & 0.40088 \\ \hline
+Graph 414 & 0.5203 & 0.5278 \\ \hline
+Graph 686 & 0.3577 & 0.35028 \\ \hline
+Graph 698 & 0.5349 & 0.576 \\ \hline
+Graph 1684 & 0.3191 & 0.36822 \\ \hline
+Graph 1912 & 0.2696 & 0.32478 \\ \hline
+Graph 3437 & 0.101 & 0.10666 \\ \hline
+Graph 3980 & 0.3375 & 0.32564 \\ \hline
+\end{tabular}
+\end{center}
+\caption{Performance comparison of our model and CESNA on the Facebook dataset}
+\end{table}
+
+The plot depicting the comparison of the two algorithms is shown below.
+\begin{figure}[H]
+\begin{center}
+\includegraphics[scale=1]{plot.png}
+\caption{Histogram showing the performance of our model and CESNA on different graphs}
+\end{center}
+\end{figure}
 \begin{thebibliography}{3}
 \bibitem{boyd}
 Boyd, Stephen, and Lieven Vandenberghe. Convex optimization. Cambridge university press, 2004.
