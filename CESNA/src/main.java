@@ -12,7 +12,7 @@ public class main {
 	HashMap<Integer, Integer> nodeIdMap; // Code id to actual id
 	HashMap<Integer, Integer> nodeIdMapReverse; // Actual id to id in code.
 
-	ArrayList<ArrayList<Integer>> G; // Done
+	ArrayList<HashMap<Integer,Integer>> G; // Done
 	boolean[][] X; // Done
 	double[][] F;
 	double[][] W;
@@ -28,16 +28,18 @@ public class main {
 	int V;
 	int E;
 
+	//{0.0015, 0.00025, }
+	
 	public main(int com) {
 		nodeIdMap = new HashMap<>();
 		nodeIdMapReverse = new HashMap<>();
 		C = com;
 		numAttr = 0;
 		alpha = 0.5;
-		eta = 0.001;
+		eta = 0.0015;
 		lambda = 1;
-		maxIter = 1000;
-		THREADS = 4;
+		maxIter = 2000;
+		THREADS = 8;
 		G = new ArrayList<>();
 	}
 
@@ -71,7 +73,11 @@ public class main {
 			X[x] = new boolean[numAttr];
 
 			for (int i = 1; i < attributes.length; i++) {
-				X[x][i - 1] = Boolean.parseBoolean(attributes[i]);
+				if (Integer.parseInt(attributes[i]) == 1){
+					X[x][i-1] = true;
+				}
+				else
+					X[x][i - 1] = false;
 			}
 		}
 		br.close();
@@ -86,7 +92,7 @@ public class main {
 		}
 
 		for (int i = 0; i < V; i++)
-			G.add(new ArrayList<Integer>());
+			G.add(new HashMap<Integer,Integer>());
 
 		for (String l : edgeList) {
 			String[] edge = l.split(" ");
@@ -96,11 +102,15 @@ public class main {
 			int a = nodeIdMapReverse.get(e0);
 			int b = nodeIdMapReverse.get(e1);
 
-			G.get(a).add(b);
-			E++;
+			G.get(a).put(b,0);
+			G.get(b).put(a,0);
 		}
 
 		br.close();
+		
+		for (int u = 0; u < G.size(); u++){
+			E += G.get(u).size();
+		}
 		// adding back nodes that are in attrfile but not in graph
 		delta = -Math.log(1 - 1.0 / G.size());
 		E /= 2;
@@ -115,12 +125,12 @@ public class main {
 		for (int node = 0; node < G.size(); node++) {
 			ArrayList<Integer> neighbors = new ArrayList<Integer>();
 			neighbors.add(node);
-			for (int n : G.get(node)) {
+			for (int n : G.get(node).keySet()) {
 				neighbors.add(n);
 			}
 			int outedges = 0, inedges = 0;
 			for (int v : neighbors) {
-				for (int v1 : G.get(v)) {
+				for (int v1 : G.get(v).keySet()) {
 					if (neighbors.contains(v1))
 						inedges++;
 					else
@@ -148,7 +158,7 @@ public class main {
 				continue;
 			ArrayList<Integer> neighbors = new ArrayList<>();
 			neighbors.add(k);
-			for (int n : G.get(k)) {
+			for (int n : G.get(k).keySet()) {
 				neighbors.add(n);
 			}
 			for (int n : neighbors) {
@@ -175,8 +185,8 @@ public class main {
 	double graphLikelihood(double[][] F) {
 		double Lg = 0.0;
 		for (int u = 0; u < G.size(); u++) {
-			for (int v : G.get(u)) {
-				if (G.get(u).contains(v))
+			for (int v = u+1; v < G.size(); v++) {
+				if (G.get(u).keySet().contains(v))
 					Lg += Math.log(1 - Math.exp(-1 * MathFunctions.dotProduct(F[u], F[v])));
 				else
 					Lg -= MathFunctions.dotProduct(F[u], F[v]);
@@ -185,6 +195,17 @@ public class main {
 		return Lg;
 	}
 
+	double graphLikelihoodU(int u, double[] Fu, double[][] F){
+		double Lgu = 0.0;
+		for (int v = 0; v < G.size(); v++) {
+			if (G.get(u).keySet().contains(v))
+				Lgu += Math.log(1 - Math.exp(-1 * MathFunctions.dotProduct(F[u], F[v])));
+			else
+				Lgu -= MathFunctions.dotProduct(F[u], F[v]);
+		} 
+		return Lgu;
+	}
+	
 	// Lx
 	double attributeLikelihood(double[][] W, double[][] F) {
 		double Lx = 0.0;
@@ -204,71 +225,75 @@ public class main {
 		return Lx;
 	}
 
+	
+	double attributeLikelihoodK(int k, double[] Wk, double[][] F ){
+		double Lxk = 0.0;
+		for (int u = 0; u < G.size(); u++) {	
+				boolean x = X[u][k];
+				double Quk = 1 / (1 + Math.exp(-1 * MathFunctions.dotProduct(Wk, F[u])));
+				int z = x ? 1 : 0;
+				Lxk += z * Math.log(Quk) + (1 - z) * Math.log(1 - Quk);
+				if (Double.isNaN(Lxk)) {
+					System.out.println("Quk = " + Quk);
+					System.out.println(MathFunctions.dotProduct(Wk, F[u]));
+					System.exit(0);
+				}
+		}
+		return Lxk;
+	}
+	
 	double likelihood(double[][] F, double[][] W) {
 		return (1 - alpha) * graphLikelihood(F) + alpha * attributeLikelihood(W, F) - lambda * MathFunctions.L1Norm(W);
 	}
 
-	double lineSearchW(double[][] updates) {
-		double fx = (alpha) * attributeLikelihood(W, F) - lambda * MathFunctions.L1Norm(W);
-		double t = 1;
+	double lineSearchW(int k, double[] updates) {
+		double fx = attributeLikelihoodK(k, W[k], F);
+		double t = 0.1;
 		double beta = 0.3;
-		boolean toContinue = true;
 		int iter = 0;
 		do {
-			double[][] W_copy = new double[numAttr][C];
-			// System.out.println("t = " + t);
-			for (int k = 0; k < numAttr; k++) {
-				for (int c = 0; c < C; c++) {
-					W_copy[k][c] = W[k][c] + (t * updates[k][c]);
-				}
-			}
-
-			double fx_new = (alpha) * attributeLikelihood(W_copy, F) - lambda * MathFunctions.L1Norm(W_copy);
-			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.05) {
-				t = beta * t;
-			} else
-				toContinue = false;
 			iter++;
-			if (iter>  5)
+			if (iter >  10)
 				return 0.0;
 
-		} while (toContinue);
-		return t;
+			double[] Wk = new double[C];
+			
+			for (int c = 0; c < C; c++) {
+				Wk[c] = W[k][c] + (t * updates[c]);
+			}
+		
+
+			double fx_new = attributeLikelihoodK(k, Wk, F);
+			if (((fx_new - fx) < t * Math.sqrt(MathFunctions.dotProduct(updates,updates)) * 0.05) || !Double.isFinite(fx_new)) {
+				t = beta * t;
+			} else
+				return t;
+			
+		} while (true);
 	}
 
-	double lineSearch(double[][] updates) {
+	double lineSearchF(int u, double[] updates) {
 		double beta = 0.3;
-		double fx = (1 - alpha) * graphLikelihood(F) + (alpha) * attributeLikelihood(W, F);
-		double t = 0.01;
+		double fx = graphLikelihoodU(u, F[u], F);
+		double t = 0.1;
 		int iter = 0;
-		boolean toContinue = true;
+		
 		do {
-			double[][] F_copy = new double[V][C];
-			boolean nonNegative = true;
-			// System.out.println("t = " + t);
-			for (int u = 0; u < G.size(); u++) {
-				for (int c = 0; c < C; c++) {
-					 F_copy[u][c] = Math.max(0, F[u][c] + (t * updates[u][c]));
-				}
+			iter++;
+			if (iter > 10)
+				return 0.0;
+			double[] Fu = new double[C];
+			
+			for (int c = 0; c < C; c++) {
+				 Fu[c] = Math.max(0, F[u][c] + (t * updates[c]));
 			}
-
-			if (nonNegative == false) {
-				t = beta * t;
-				continue;
-			}
-
-			double fx_new = (1 - alpha) * graphLikelihood(F_copy) + (alpha) * attributeLikelihood(W, F_copy);
-			if ((fx_new - fx) < t * MathFunctions.L2NormSq(updates) * 0.05) {
+			
+			double fx_new = graphLikelihoodU(u, Fu, F);
+			if (((fx_new - fx) < t * Math.sqrt(MathFunctions.dotProduct(updates,updates)) * 0.05) || !Double.isFinite(fx_new)) {
 				t = beta * t;
 			} else
-				toContinue = false;
-
-			iter++;
-			if (iter > 5)
-				return 0.0;
-
-		} while (toContinue);
-		return t;
+				return t;
+		} while (true);
 	}
 
 	void updateFDriver() throws InterruptedException {
@@ -312,10 +337,11 @@ public class main {
 			}
 		}
 		// eta = 0.001;
-		eta = lineSearch(updates);
+		//eta = lineSearch(updates);
 		System.out.println("Eta for F : " + eta);
 
 		for (int u = 0; u < G.size(); u++) {
+			//eta = lineSearchF(u, updates[u]);
 			for (int c = 0; c < C; c++) {
 				F[u][c] = Math.max(0.0, F[u][c] + eta * updates[u][c]);
 			}
@@ -364,22 +390,13 @@ public class main {
 	}
 
 	double[][] updateF(double[] sumFvc, int startIndex, int endIndex, double[][] updates) {
-		// HashMap<Integer, ArrayList<Double>> newF = new HashMap<>();
-		// HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
-		/*
-		 * double[] sumFvc = new double[C];
-		 * 
-		 * for (int v : G.keySet()) { ArrayList<Double> Fv = F.get(v); for (int
-		 * c = 0; c < C; c++) { sumFvc[c] += Fv.get(c); } }
-		 */
-
 		for (int u = startIndex; u <= endIndex; u++) {
 			// newF.put(u, new ArrayList<Double>());
 			// updates.put(u, new ArrayList<Double>());
 			double[] derivative_G = new double[C];
 			double[] derivative_X = new double[C];
 			double[] diff = new double[C];
-			for (int v : G.get(u)) {
+			for (int v : G.get(u).keySet()) {
 				double dot = MathFunctions.dotProduct(F[u], F[v]);
 				double exp = Math.exp(-1 * dot);
 				double fraction = exp / (1 - exp);
@@ -461,7 +478,7 @@ public class main {
 					update -= lambda;
 				else
 					update += lambda;
-				updates[k][c] = update * eta;
+				updates[k][c] = update;
 			}
 		}
 		return updates;
@@ -501,12 +518,12 @@ public class main {
 				}
 			}
 		}
-		eta = lineSearchW(updates);
+		//eta = lineSearchW(updates);
 		// eta = 0.0001;
-		System.out.println("Eta for W : " + eta);
 	
 
 		for (int k = 0; k < numAttr; k++) {
+			//eta = lineSearchW(k, updates[k]);
 			for (int c = 0; c < C; c++) {
 				W[k][c] = W[k][c] + eta * updates[k][c];
 			}
@@ -524,7 +541,7 @@ public class main {
 			if (previousLikelihood != -1) {
 				// System.out.println((likelihood - previousLikelihood) /
 				// previousLikelihood);
-				if ((previousLikelihood - likelihood) / previousLikelihood < 0.00001)
+				if ((previousLikelihood - likelihood) / previousLikelihood < 0.0001)
 					break;
 			}
 			previousLikelihood = likelihood;
@@ -568,22 +585,16 @@ public class main {
 	}
 
 	double driver(String graphfilename, String attrfilename) throws Exception {
-		// String graphfilename = "facebook/0.edges";
-		// String attrfilename = "facebook/0.feat";
 		readGraph(graphfilename, attrfilename);
 		initAffiliations();
-
 		gradientAscent();
 		getCommunities();
 		return 0.0;
-		// return likelihood(F, W);
 	}
 
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
-		main m = new main(10);
-		m.driver("facebook/107.edges", "facebook/107.feat");
-
+		main m = new main(8);
+		m.driver("facebook/3980.edges", "facebook/3980.feat");
 	}
-
 }

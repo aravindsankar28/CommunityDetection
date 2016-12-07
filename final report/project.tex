@@ -165,10 +165,18 @@ Note that F need not be explicitly mentioned as part of the likelihood function 
 \\[5pt]
 Similarly for $F_{u}$ choose the largest possible $\eta_u$ such that:
 $$[L(F_{u}^n  + \eta_cu \frac{\partial \mathcal{L}}{\partial F_{u}^n}) - L(F_{u}^n)]  \geq \tau(||\frac{\partial \mathcal{L}}{\partial F_{u}^n}||)\eta_u$$
-Note that Norm here represents L2 Norm of the update vector, since $F_{u}$ is a vector of length equal to number of communities.
+The Norm here represents L2 Norm of the update vector, since $F_{u}$ is a vector of length equal to number of communities. $\tau$, the control parameter for line search, is set empirically.
 \section{Experimental Evaluation}
 \subsection{Setup}
-\subsection{Running Time}
+We run our model on the 10 ego networks present in the Facebook dataset \cite{facebook dataset}. The edge - attribute tradeoff parameter $\alpha$ is set to 0.5. Stopping condition is set to 0.1\% for cross validation fits and 0.001\% to fit the final model once K has been determined.  The code is parallelized across users for $F_{u}$ update computation and across communities for $W_{c}$ updates. The number of threads is set to 8 and executed on an 8-core machine for optimal performance.
+\subsection{An important observation}
+We find that in most graphs, the changes to the density parameter $W$ tend to rely heavily on the initializations, especially for larger graphs. In some cases, a few communities tend to dominate over iterations and reduce the quality of communities generated. Based on our empirical evaluation with the facebook dataset, the initial density values which are assigned based on the edge ratio, tend to perform well and capture the general structure of communities generated. Hence as a simplifying step, we have removed density updates in the final submission to reduce running times, and to perform well on graphs of all sizes. The W parameters thus remains set constant to the initial density values assigned based on the In-Out edge ratio as defined in section 3.4. The subsequent runtimes are recorded with this simplification.
+\subsection{Running Time (for a fixed number of clusters set to 10)}
+Cross validation is not performed in order to compare our implementations fairly. Both models are run with K fixed to 10 for all the ego-networks.
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Graph} & \textbf{CESNA} \\ \hline
+\end{tabular}
 \subsection{Quality}
 We evaluate the quality of the communities using the evaluation metric proposed in CESNA given by : 
 \[ \frac{1}{2 |C^{*}|} \sum\limits_{C_i^{*} \in C^{*}} \max_{C_j \in C} \delta (C_i^{*}, C_j) + \frac{1}{2 |C|} \sum\limits_{C_j \in C} \max_{C_i^{*} \in C^{*}} \delta (C_i^{*}, C_j) \]

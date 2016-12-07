@@ -28,7 +28,6 @@ public class main {
 	double eta;
 	int maxIter;
 	static int graphNum;
-	double delta;
 	int THREADS;
 	int edges;
 	int nRandLim;
@@ -185,7 +184,6 @@ public class main {
 		br.close();
 
 		// adding back nodes that are in attrfile but not in graph
-		delta = -Math.log(1 - 1.0 / G.size());
 
 		W = new double[C];
 		F = new double[V][C];
