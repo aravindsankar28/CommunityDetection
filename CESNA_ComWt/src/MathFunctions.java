@@ -28,6 +28,27 @@ public class MathFunctions {
 		return sum;
 	}
 
+	static double cosineSim(boolean[] x, boolean[] y) {
+		int sum = 0;
+		for (int i = 0; i < x.length; i++){
+			if (x[i] && y[i])
+				sum++;
+		}
+		if (L2Norm(x)==0 || L2Norm(y)==0){
+			return 0.0;
+		}
+		return (sum/(L2Norm(x) * L2Norm(y)));
+	}
+	
+	static double L2Norm(boolean[] x){
+		double sum = 0.0;
+		for (boolean x1: x){
+			if (x1)
+				sum = sum + (1);
+		}
+		return Math.sqrt(sum);
+	}
+	
 	static double L1Norm(HashMap<Integer, ArrayList<Double>> M) {
 		double s = 0.0;
 		for (int x : M.keySet()) {

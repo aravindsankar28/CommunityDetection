@@ -11,45 +11,113 @@ public class main {
 	 */
 	HashMap<Integer, Integer> nodeIdMap; // Code id to actual id
 	HashMap<Integer, Integer> nodeIdMapReverse; // Actual id to id in code.
-
+	ArrayList<ArrayList<Integer>> heldOutEdges;
 	ArrayList<HashMap<Integer, Integer>> G; // Done
 	boolean[][] X; // Done
 	double[][] F;
-	double[][] E;
 	double[] W;
-
+	double[][] cosineSim;
 	ArrayList<HashMap<Integer, Integer>> nodeAttributeMap;
 	ArrayList<HashMap<Integer, Integer>> attributeNodeMap;
 
+	double stoppingCondition;
+	double heldOutPercent;
 	int C; // No of communities
 	int numAttr;
 	double lambda;
 	double eta;
 	int maxIter;
+	static int graphNum;
 	double delta;
 	int THREADS;
 	int edges;
+	int nRandLim;
 
 	double alpha;
 	int V;
-	
+
 	public main(int com) {
-		nodeIdMap = new HashMap<>();
-		nodeIdMapReverse = new HashMap<>();
 		C = com;
 		numAttr = 0;
-		alpha = 0.5;
-		eta = 0.00005;
+		alpha = 0.9;
+		stoppingCondition = 0.01;
+		nRandLim = 3;
+		heldOutPercent = 0.2;
 		lambda = 1;
-		maxIter = 1000;
-		THREADS = 4;
-		G = new ArrayList<>();
-		nodeAttributeMap = new ArrayList<>();
-		attributeNodeMap = new ArrayList<>();
+		maxIter = 2000;
+		THREADS = 8;
+	}
+
+	private void performHoldOut(boolean remove) {
+		heldOutEdges = new ArrayList<>();
+		/// HOLD OUT SET - FOR CROSS VALIDATION////
+
+		// AT this point start removing 20% edges to the held Out set
+		if (remove) {
+			int numEdgesRemoved = (int) (heldOutPercent * edges);
+			// System.out.println(edges);
+			// System.out.println(numEdgesRemoved);
+			Random r = new Random();
+			for (int er = 0; er < numEdgesRemoved; er++) {
+				int randV1;
+				do {
+					randV1 = r.nextInt(G.size());
+				} while (G.get(randV1).size() == 0);
+				ArrayList<Integer> neighbors = new ArrayList<>();
+				for (int n : G.get(randV1).keySet()) {
+					neighbors.add(n);
+				}
+
+				int randV2;
+				randV2 = r.nextInt(G.get(randV1).size());
+				ArrayList<Integer> e = new ArrayList<>();
+				e.add(randV1);
+				int v2 = neighbors.get(randV2);
+				e.add(v2);
+				heldOutEdges.add(e);
+				G.get(randV1).remove(v2);
+				G.get(v2).remove(randV1);
+				edges--;
+			}
+		} else {
+			for (ArrayList<Integer> e : heldOutEdges) {
+				edges++;
+				G.get(e.get(0)).put(e.get(1), 0);
+				G.get(e.get(1)).put(e.get(0), 0);
+			}
+			heldOutEdges = new ArrayList<>();
+		}
+
+		///////////////////////////////////////////////////////////////////////////////
+	}
+
+	private double heldOutLikelihood() {
+		double likelihood = 0.0;
+		int skippedEdges = 0;
+		// System.out.println("Held size: " + heldOutEdges.size());
+		for (ArrayList<Integer> e : heldOutEdges) {
+			int v1 = e.get(0);
+			int v2 = e.get(1);
+			double l = Math.log(1 - Math.exp(-computePsi(v1, v2, F[v1], F[v2], W)));
+			// System.out.println(-computePsi(v1, v2, F[v1], F[v2], W) + " " + l
+			// + " DP "
+			// + MathFunctions.dotProduct(F[v1], F[v2]) + " cosineSim " +
+			// cosineSim[v1][v2]);
+			if (MathFunctions.dotProduct(F[v1], F[v2]) == 0 && cosineSim[v1][v2] == 0) {
+				skippedEdges++;
+			} else
+				likelihood += l;
+		}
+		// System.out.println("skipped " + skippedEdges);
+		return likelihood * (heldOutEdges.size() / (heldOutEdges.size() - skippedEdges));
 	}
 
 	private void readGraph(String graphfilename, String attrfilename) throws Exception {
-
+		nodeIdMap = new HashMap<>();
+		nodeIdMapReverse = new HashMap<>();
+		G = new ArrayList<>();
+		nodeAttributeMap = new ArrayList<>();
+		attributeNodeMap = new ArrayList<>();
 		BufferedReader br = new BufferedReader(new FileReader(attrfilename));
 		String line;
 		int nodeCounter = 0;
@@ -59,7 +127,7 @@ public class main {
 		}
 		V = attributeStringList.size();
 		X = new boolean[V][];
-
+		cosineSim = new double[V][V];
 		for (String l : attributeStringList) {
 
 			String[] attributes = l.split(" ");
@@ -78,7 +146,10 @@ public class main {
 			X[x] = new boolean[numAttr];
 
 			for (int i = 1; i < attributes.length; i++) {
-				X[x][i - 1] = Boolean.parseBoolean(attributes[i]);
+				if (Integer.parseInt(attributes[i]) == 1)
+					X[x][i - 1] = true;
+				else
+					X[x][i - 1] = false;
 			}
 		}
 		br.close();
@@ -104,17 +175,19 @@ public class main {
 			int b = nodeIdMapReverse.get(e1);
 
 			G.get(a).put(b, 1);
-			edges++;
+			G.get(b).put(a, 1);
 		}
-
+		edges = 0;
+		for (int v = 0; v < G.size(); v++) {
+			edges += G.get(v).size();
+		}
+		edges = edges / 2;
 		br.close();
+
 		// adding back nodes that are in attrfile but not in graph
 		delta = -Math.log(1 - 1.0 / G.size());
-		
-		edges /= 2;
 
 		W = new double[C];
-		E = new double[numAttr][C];
 		F = new double[V][C];
 		// Init.
 		for (int k = 0; k < numAttr; k++)
@@ -127,6 +200,25 @@ public class main {
 					nodeAttributeMap.get(u).put(k, 0);
 					attributeNodeMap.get(k).put(u, 0);
 				}
+		}
+
+		for (int u = 0; u < G.size(); u++) {
+			Set<Integer> att_u = nodeAttributeMap.get(u).keySet();
+			int uSize = nodeAttributeMap.get(u).size();
+			for (int v = 0; v < G.size(); v++) {
+				HashSet<Integer> att_v = new HashSet<>();
+				Set<Integer> att_v1 = nodeAttributeMap.get(v).keySet();
+				for (int v1 : att_v1)
+					att_v.add(v1);
+				int vSize = nodeAttributeMap.get(v).size();
+				att_v.retainAll(att_u);
+				if (uSize == 0 || vSize == 0)
+					cosineSim[u][v] = 0.0;
+				else {
+					cosineSim[u][v] = (att_v.size() * 1.0) / (Math.sqrt(uSize) * Math.sqrt(vSize));
+				}
+
+			}
 		}
 	}
 
@@ -203,46 +295,116 @@ public class main {
 			W[c] = density;
 		}
 
-		for (int attr = 0; attr < numAttr; attr++) {
-			for (int com = 0; com < C; com++) {
-				E[attr][com] =  (r.nextDouble() * 1.0) - 0.5;
+		// Computing the constant sim term part of likelihood
+
+		for (int u = 0; u < G.size(); u++) {
+			for (int v = 0; v < G.size(); v++) {
+				if (!G.get(u).containsKey(v)) {
+
+				}
 			}
 		}
-
 	}
 
-	double computePhi(int u, int v, int c, double[] W, double[][] E) {
-		double sum = 0.0;
-		for (int k : nodeAttributeMap.get(u).keySet()) {
-			if (nodeAttributeMap.get(v).containsKey(k))
-				sum += E[k][c];
-		}
-		return alpha * W[c] + (1 - alpha) * sum;
-	}
-
-	double computePsi(int u, int v, double[] Fu, double[] Fv, double[] W, double[][] E) {
+	double computePsi(int u, int v, double[] Fu, double[] Fv, double[] W) {
 		double val = 0.0;
 		for (int c = 0; c < C; c++) {
-			double val_c = Fu[c] * Fv[c] * computePhi(u, v, c, W, E);
-			val += val_c;
+			val += Fu[c] * Fv[c] * W[c] * alpha;
 		}
+		val += (1.0 - alpha) * cosineSim[u][v];
 		return val;
 	}
 
-	// L_G
-	double likelihood(double[][] F, double[][] E, double[] W) {
+	double likelihood(double[][] F, double[] W) {
+
 		double Lg = 0.0;
 		for (int u = 0; u < G.size(); u++) {
-			for (int v = 0; v < G.size(); v++) {
+			for (int v = u + 1; v < G.size(); v++) {
 				if (G.get(u).containsKey(v))
-					Lg += Math.log(1 - Math.exp(-computePsi(u, v, F[u], F[v], W, E)));
+					Lg += Math.log(1 - Math.exp(-computePsi(u, v, F[u], F[v], W)));
 				else
-					Lg -= computePsi(u, v, F[u], F[v], W, E);
-
+					Lg -= computePsi(u, v, F[u], F[v], W);
 			}
 		}
-		Lg -= lambda * MathFunctions.L1Norm(E);
 		return Lg;
+	}
+
+	double likelihoodU(int u, double[] Fu, double[][] F, double[] W) {
+		double Lgu = 0.0;
+		for (int v = 0; v < G.size(); v++) {
+			if (v == u)
+				continue;
+			if (G.get(u).containsKey(v))
+				Lgu += Math.log(1 - Math.exp(-computePsi(u, v, Fu, F[v], W)));
+			else
+				Lgu -= computePsi(u, v, Fu, F[v], W);
+		}
+		return Lgu;
+	}
+
+	double lineSearchFu(int u, double[] updates) {
+		double beta = 0.5;
+		double fx = likelihoodU(u, F[u], F, W);
+		double t = 0.1;
+		double controlParameter = 0.01;
+		int iter = 0;
+		boolean toContinue = true;
+		do {
+			iter++;
+			if (iter > 10)
+				return 0.0;
+			double[] Fu_temp = new double[C];
+
+			for (int c = 0; c < C; c++) {
+				Fu_temp[c] = Math.max(0, F[u][c] + (t * updates[c]));
+			}
+
+			double fx_new = likelihoodU(u, Fu_temp, F, W);
+			if (!Double.isFinite(fx_new)) {
+				t = beta * t;
+				continue;
+			}
+			if ((fx_new - fx) < t * Math.sqrt(MathFunctions.dotProduct(updates, updates)) * controlParameter) {
+				// System.out.println(t);
+				t = beta * t;
+				continue;
+			} else
+				toContinue = false;
+		} while (toContinue);
+
+		return t;
+	}
+
+	double lineSearchW(double[] updates) {
+		double beta = 0.5;
+		double fx = likelihood(F, W);
+		double t = 0.1;
+		double controlParameter = 0.01;
+		int iter = 0;
+		boolean toContinue = true;
+		do {
+			t = beta * t;
+			iter++;
+			if (iter > 10)
+				return 0.0;
+			double[] W_copy = new double[C];
+			for (int u = 0; u < G.size(); u++) {
+				for (int c = 0; c < C; c++) {
+					W_copy[c] = Math.max(0, W[c] + (t * updates[c]));
+				}
+			}
+			double fx_new = likelihood(F, W_copy);
+			if (((fx_new - fx) < t * Math.sqrt(MathFunctions.dotProduct(updates, updates)) * controlParameter)
+					|| !Double.isFinite(fx_new)) {
+				continue;
+			} else {
+				// System.out.println("eta is " + t + " likelihood " +
+				// likelihood(F, W_copy));
+				break;
+			}
+		} while (toContinue);
+		// System.out.println("t returned " + t);
+		return t;
 	}
 
 	void updateFDriver() throws InterruptedException {
@@ -286,13 +448,15 @@ public class main {
 			}
 		}
 		// eta = 0.001;
-		// eta = lineSearch(updates);
 
 		for (int u = 0; u < G.size(); u++) {
+			eta = lineSearchFu(u, updates[u]);
 			for (int c = 0; c < C; c++) {
 				F[u][c] = Math.max(0.0, F[u][c] + eta * updates[u][c]);
 			}
 		}
+		// System.out.println("after update with eta = " + eta + " " +
+		// likelihood(F, W));
 	}
 
 	class UpdateFThread extends Thread {
@@ -313,26 +477,6 @@ public class main {
 
 		public void run() {
 			updates = updateF(sumFvc, startIndex, endIndex, updates);
-		}
-	}
-
-	class UpdateEThread extends Thread {
-
-		ArrayList<Integer> attributes;
-		// HashMap<Integer, ArrayList<Double>> updates;
-		double[][] updates;
-		int startIndex;
-		int endIndex;
-
-		UpdateEThread(int startIndex, int endIndex, double[][] updates) {
-			// this.attributes = attributes;
-			this.startIndex = startIndex;
-			this.endIndex = endIndex;
-			this.updates = updates;
-		}
-
-		public void run() {
-			updates = updateE(startIndex, endIndex, updates);
 		}
 	}
 
@@ -370,31 +514,23 @@ public class main {
 			// newF.put(u, new ArrayList<Double>());
 			// updates.put(u, new ArrayList<Double>());
 			double[] derivative_G = new double[C];
-			double[] derivative_X = new double[C];
 			double[] diff = new double[C];
 			for (int v : G.get(u).keySet()) {
 
-				double psi = computePsi(u, v, F[u], F[v], W, E);
+				double psi = computePsi(u, v, F[u], F[v], W);
 
 				double exp = Math.exp(-1 * psi);
 				double fraction = exp / (1 - exp);
 
 				for (int c = 0; c < C; c++) {
-					derivative_G[c] += F[v][c] * fraction * computePhi(u, v, c, W, E);
-					diff[c] -= F[v][c];
+					derivative_G[c] += F[v][c] * fraction * alpha * W[c];
+					diff[c] += F[v][c];
 					// derivative_G[c] -= F.get(v).get(c);
 				}
 
 			}
 			for (int c = 0; c < C; c++) {
-				derivative_G[c] -= (diff[c] + sumFvc[c] - F[u][c]) * alpha * W[c];
-				double nonOptTerm = 0.0;
-				for (int k : nodeAttributeMap.get(u).keySet()) {
-					for (int v : attributeNodeMap.get(k).keySet())
-						if (!G.get(u).containsKey(v))
-							nonOptTerm += E[k][c];
-				}
-				derivative_G[c] -= (1 - alpha) * nonOptTerm;
+				derivative_G[c] -= (sumFvc[c] - diff[c] - F[u][c]) * alpha * W[c];
 			}
 
 			for (int c = 0; c < C; c++) {
@@ -409,45 +545,13 @@ public class main {
 		return updates;
 	}
 
-	double[][] updateE(int startIndex, int endIndex, double[][] updates) {
-
-		for (int k = startIndex; k <= endIndex; k++) {
-			double update = 0.0;
-			for (int c = 0; c < C; c++) {
-				ArrayList<Integer> nodes = new ArrayList<>(attributeNodeMap.get(k).keySet());
-				for (int i = 0; i < nodes.size(); i++) {
-					int u = nodes.get(i);
-					for (int j = i + 1; j < nodes.size(); j++) {
-						int v = nodes.get(j);
-						if (G.get(u).containsKey(v)) {
-							double psi = computePsi(u, v, F[u], F[v], W, E);
-							double exp = Math.exp(-1 * psi);
-							double fraction = exp / (1 - exp);
-							update += fraction * F[u][c] * F[v][c];
-						} else {
-							update -= F[u][c] * F[v][c];
-						}
-					}
-
-				}
-				update *= (1 - alpha);
-				if (E[k][c] > 0)
-					update -= lambda;
-				else
-					update += lambda;
-				updates[k][c] = update;
-			}
-		}
-		return updates;
-	}
-
 	double[] updateW(int startIndex, int endIndex, double[] updates) {
 		for (int c = startIndex; c <= endIndex; c++) {
 			double update = 0.0;
 			for (int u = 0; u < G.size(); u++) {
 				for (int v = u + 1; v < G.size(); v++) {
 					if (G.get(u).containsKey(v)) {
-						double psi = computePsi(u, v, F[u], F[v], W, E);
+						double psi = computePsi(u, v, F[u], F[v], W);
 						double exp = Math.exp(-1 * psi);
 						double fraction = exp / (1 - exp);
 						update += fraction * F[u][c] * F[v][c];
@@ -493,58 +597,13 @@ public class main {
 				updates[c] = threads[j].updates[c];
 			}
 		}
-		// eta = lineSearchW(updates);
+		eta = lineSearchW(updates);
 		// eta = 0.0001;
-
+		// System.out.println("eta chosen for W " + eta);
 		for (int c = 0; c < C; c++) {
-			W[c] = W[c] + eta * updates[c];
+			W[c] = Math.max(0.0, W[c] + eta * updates[c]);
 		}
-
-	}
-
-	void updateEDriver() throws InterruptedException {
-
-		int splitLen = (int) Math.ceil(numAttr * 1.0 / THREADS);
-		int[] startIndices = new int[THREADS];
-		int[] endIndices = new int[THREADS];
-
-		for (int i = 0; i < THREADS; i++) {
-			startIndices[i] = splitLen * i;
-			endIndices[i] = Math.min(splitLen * (i + 1) - 1, numAttr - 1);
-		}
-
-		UpdateEThread[] threads = new UpdateEThread[THREADS];
-		double[][] updates = new double[numAttr][C];
-
-		for (int j = 0; j < threads.length; j++) {
-			threads[j] = new UpdateEThread(startIndices[j], endIndices[j], updates);
-		}
-
-		for (UpdateEThread thread : threads) {
-			thread.start();
-		}
-		for (UpdateEThread thread : threads) {
-			thread.join();
-		}
-
-		// HashMap<Integer, ArrayList<Double>> updates = new HashMap<>();
-
-		for (int j = 0; j < THREADS; j++) {
-			for (int k = startIndices[j]; k <= endIndices[j]; k++) {
-				for (int c = 0; c < C; c++) {
-					updates[k][c] = threads[j].updates[k][c];
-				}
-			}
-		}
-		// eta = lineSearchW(updates);
-		// eta = 0.0001;
-
-		for (int k = 0; k < numAttr; k++) {
-			for (int c = 0; c < C; c++) {
-				E[k][c] = E[k][c] + eta * updates[k][c];
-			}
-		}
-
+		// System.out.println("Likelihood after W update " + likelihood(F, W));
 	}
 
 	void gradientAscent() throws InterruptedException {
@@ -552,12 +611,13 @@ public class main {
 
 		double previousLikelihood = -1;
 		for (int iter = 0; iter < maxIter; iter++) {
-			double likelihood = likelihood(F, E, W);
-			System.out.println("Likelihood at iter " + iter + " " + likelihood);
+			double likelihood = likelihood(F, W);
+			// System.out.println("Likelihood at iter " + iter + " " +
+			// likelihood);
 			if (previousLikelihood != -1) {
 				// System.out.println((likelihood - previousLikelihood) /
 				// previousLikelihood);
-				if ((previousLikelihood - likelihood) / previousLikelihood < 0.0001)
+				if ((previousLikelihood - likelihood) / previousLikelihood < stoppingCondition)
 					break;
 			}
 			previousLikelihood = likelihood;
@@ -565,34 +625,46 @@ public class main {
 			updateFDriver();
 			// System.out.println("Likelihood after F update at iter " + iter +
 			// " " + likelihood(F, W));
-			updateEDriver();
-			updateWDriver();
+			// updateEDriver();
+			// updateWDriver();
 
 			// System.out.println("Time " + (System.currentTimeMillis() -
 			// startTime) / (1000.0 * (iter + 1)));
 		}
-		System.out.println("Time " + (System.currentTimeMillis() - startTime) / (1000.0));
+		// System.out.println("Time " + (System.currentTimeMillis() - startTime)
+		// / (1000.0));
 	}
 
-	void getCommunities() {
+	void getCommunities(boolean print) {
+		double[] delta_c = new double[C];
 		ArrayList<ArrayList<Integer>> communities = new ArrayList<>();
 		for (int c = 0; c < C; c++) {
 			communities.add(new ArrayList<>());
+			// System.out.println("w_c " + W[c]);
+			delta_c[c] = Math.sqrt(Math.log(G.size() * 1.0 / (G.size() - 1)) / (W[c] * alpha * 1.0));
+			// System.out.println(Math.log((G.size() * 1.0) / (G.size() - 1)));
+			// System.out.println("hello " + Math.log(G.size() * 1.0 / (G.size()
+			// - 1)) / (W[c] * alpha * 1.0));
+			// System.out.println("delta_c " + delta_c[c]);
 		}
+		// System.out.println(delta_c);
 
 		for (int u = 0; u < G.size(); u++) {
 			for (int c = 0; c < C; c++) {
-				if (F[u][c] > delta) {
+				if (F[u][c] > delta_c[c]) {
+					// System.out.println(F[u][c]);
+					// System.out.println(delta_c[c]);
 					communities.get(c).add(u);
 				}
 			}
 		}
-
-		for (ArrayList<Integer> comm : communities) {
-			System.out.print("Circle");
-			for (int x : comm)
-				System.out.print(" " + nodeIdMap.get(x));
-			System.out.println();
+		if (print) {
+			for (ArrayList<Integer> comm : communities) {
+				System.out.print("Circle");
+				for (int x : comm)
+					System.out.print(" " + nodeIdMap.get(x));
+				System.out.println();
+			}
 		}
 	}
 
@@ -600,27 +672,74 @@ public class main {
 		return G.size() * C + numAttr * C;
 	}
 
-	double driver(String graphfilename, String attrfilename) throws Exception {
+	double driver(String graphFileName, String attrFileName, boolean print) throws Exception {
 		// String graphfilename = "facebook/0.edges";
 		// String attrfilename = "facebook/0.feat";
-		readGraph(graphfilename, attrfilename);
+
 		initAffiliations();
 		gradientAscent();
-		getCommunities();
-//		for (int k = 0; k < numAttr; k++) {
-//			for (int c = 0; c < C; c++) {
-//				System.out.print(E[k][c] + " ");
-//			}
-//			System.out.println();
-//		}
+		getCommunities(print);
+		// for (int k = 0; k < numAttr; k++) {
+		// for (int c = 0; c < C; c++) {
+		// System.out.print(E[k][c] + " ");
+		// }
+		// System.out.println();
+		// }
 		return 0.0;
 		// return likelihood(F, W);
 	}
 
 	public static void main(String[] args) throws Exception {
 		// TODO Auto-generated method stub
-		main m = new main(10);
-		m.driver("facebook/107.edges", "facebook/107.feat");
+		main m = new main(0);
+		graphNum = 3980;
+		HashMap<Integer, Double> perf = new HashMap<>();
+		String graphFileName = "facebook/" + String.valueOf(graphNum) + ".edges";
+		String attrFileName = "facebook/" + String.valueOf(graphNum) + ".feat";
+		int bestK = 0;
+		double bestKLikelihood = (double) 0;
+		m.readGraph(graphFileName, attrFileName);
+		System.out.println(m.V);
+		int lowerLimit = 4;
+		int upperLimit = 8;
+		if (m.V >= 400){
+			lowerLimit = 6;
+			upperLimit = 14;
+		}
+		for (int K = lowerLimit; K <= upperLimit; K += 2) {
+			System.out.println(K);
+			m.C = K;
+			double avgL = 0.0;
+			for (int nRand = 0; nRand < m.nRandLim; nRand++) {
+				System.out.println(nRand);
+				m.readGraph(graphFileName, attrFileName);
+				m.performHoldOut(true);
+				m.driver(graphFileName, attrFileName, false);
+				double L = m.heldOutLikelihood();
+				avgL += L;
+				m.performHoldOut(false);
+			}
+			avgL /= m.nRandLim;
+			perf.put(K, avgL);
+			if (bestKLikelihood == 0.0) {
+				bestKLikelihood = avgL;
+				bestK = K;
+			} else {
+				if (avgL > bestKLikelihood) {
+					bestKLikelihood = avgL;
+					bestK = K;
+				}
+			}
+		}
+		m.C = bestK;
+		m.stoppingCondition /= 1000;
+		for (int i = 0; i < 5; i++){
+			m.readGraph(graphFileName, attrFileName);
+			m.driver(graphFileName, attrFileName, true);
+			System.out.println("-");
+		}
+		System.out.println(bestK);
+		System.out.println(perf);
 	}
 
 }

@@ -19,7 +19,7 @@ public class CesnaMain {
 		ArrayList<Double> BIC_values = new ArrayList();
 		for (int i = minCommunities; i < maxCommunities; i++) {
 			m = new main(i);
-			double likelihood = m.driver(graphfilename, attrfilename);
+			double likelihood = m.driver(graphfilename, attrfilename, true);
 			int k = m.numberOfParameters();
 			double BIC = -2* likelihood + k* Math.log(m.V);
 			System.out.println(BIC);
