@@ -41,25 +41,26 @@
 
 
 \section{Introduction}
-We address the task of discovering social circles in a user's ego network in this project. In addition to the baseline algorithms reported in the mid-term submission, we implement two algorithms for solving this problem. The first algorithm CESNA \cite{cesna} is a state of the art technique for detecting overlapping communities in a social network. We provide a best-effort implementation and report the results that we obtain. The second algorithm that we present here is our own model. We draw motivation from some ideas of existing techniques and our analysis of the datasets \cite{SNAP dataset}. 
+We address the task of discovering social circles in a user's ego network in this project. In addition to the baseline algorithms reported in the mid-term submission, we implement two algorithms for solving this problem. The first algorithm CESNA \cite{cesna} is a state of the art technique for detecting overlapping communities in a social network. We provide a best-effort implementation and report the results that we obtain from our implementation. The second algorithm that we present here is our own model. We draw motivation from some ideas of existing techniques and our analysis of the datasets \cite{SNAP dataset}. 
 In the next section, we provide a very brief description of the main idea behind CESNA. 
 After that, we describe our proposed model in detail. Finally, we present the results of the two algorithms on the facebook ego-network dataset.
 
 \section{Algorithm 1 - CESNA}
-This paper proposes a probabilistic model for generating network topology and node attributes. They assume that each node in the network has a community membership which determines the edges observed in the network. Each community also has a relevance score with respect to each attribute. The community memberships along with attribute specific relevance score for each community are assumed to generate the observed network and attributes. They develop a gradient ascent algorithm to optimize their likelihood function.
+This paper proposes a probabilistic model for generating network topology and node attributes. They assume that each node in the network has a community membership which determines the edges observed in the network. Each community also has a relevance score with respect to each attribute. The community memberships along with attribute specific relevance score for each community are assumed to generate the observed network and attributes independently through a simple additive function. They develop a gradient ascent algorithm to optimize their likelihood function.
 \section{Algorithm 2 - Our model}
 We first provide the main motivation behind the design of our model.
 \subsection{Motivation}
-We propose our model by drawing the basic idea of community memberships for each node from CESNA. However, we aim to simplify the network and attribute generation process and improve it using insights that we obtain from our dataset. First, we analyzed the ground truth communities in the given dataset to determine the edge density for each community. In Table 1, we show the mean value of density in each ego-network, along with the standard deviation. We can clearly see that there is a significant variation in the density of the ground truth communities. This shows that effect of edge formation due to each community is different and depends on the density of the community. We capture this explicitly in our model by allowing each community to have a different influence in edge formation.  \\[3pt]
+We propose our model by drawing the basic idea of community memberships for each node from CESNA. However, we aim to simplify the network and attribute generation process and improve it using insights that we obtain from our dataset. First, we analyzed the ground truth communities in the given dataset to determine the edge density for each community. In Table 1, we show the mean value of density in each ego-network, along with the standard deviation. We can clearly see that there is a significant variation in the density of the ground truth communities. Thus it is preferable to have a model which permits different communities to have variable contribution to the edge likelihood. We capture this explicitly in our model by allowing each community to have a different influence in edge formation (lets call this community density, since dense communities have more influence on edge likelihood) unlike most other models.  \\[3pt]
 
-The second insight is that node attributes in ego-networks tend to be very sparse and noisy. This means that explicitly modeling the generation of node attributes based on community memberships could lead to poor detected communities. Instead, we use the node attributes to capture the profile similarity between a pair of users, which is now used to guide the formation of edges in a network based on community memberships of each node. This also has an added benefit in that the complexity of the model is reduced greatly as we only model the likelihood of the observed edges in the network. To summarize, we model the likelihood of observing the network edges based on community memberships of each node, community density and node attributes. We define a likelihood function to capture this idea and propose a parallel optimization algorithm to infer the parameters of our model. We find that our model is much faster than CESNA (our implementation) in practice.
+The second insight is that node attributes in ego-networks tend to be very sparse and noisy. This means that explicitly modeling the generation of node attributes based on community memberships could lead to ill formed communities. Instead, we use the node attributes to capture the profile similarity between a pair of users, which is now used to guide the formation of edges in a network based on community memberships of each node. This also has an added benefit in that the complexity of the model is reduced greatly as we only model the likelihood of the observed edges in the network. \\[3pt]
+To summarize, we model the likelihood of observing the network edges based on community memberships of each node, community density and node attributes. We define a likelihood function to capture this idea and propose a parallel optimization algorithm to infer the parameters of our model. We find that our model is much faster than CESNA (our implementation) in practice (both models were implemented in Java).
 Next, we provide a formal description of our model. 
 
 \subsection{Model formulation}
 Given an undirected graph $G(V,E)$ with binary node attributes $X$,  the goal is to detect $C$ communities that could be overlapping. For now, we assume that the number of communities $C$ is given.  We describe the procedure to automatically find the best value of $C$ later.
 We assume that there are $N$ nodes in the network $G$ and each node has $K$ attributes. We denote the network by $G$, and attributes by $X$.
 Each node has a binary attribute vector denoted by $\mathbf{X_u}$ of size $K$,  
-where $\mathbf{X_u} (k) = 1$ indicates the presence of attribute $k$ for node $u$ in the network. In addition to these basic observed variables, we have node community memberships $F$ and community density weights $W$. For community memberships $F$, we assume that each node $u$ has a non-negative affiliation weight $F_{uc}$ to community $c$. Each community has a non-negative weight $W_c$ which represents the density of the community. First we describe how similarity of two users is modeled using their node attributes. 
+where $\mathbf{X_u} (k) = 1$ indicates the presence of attribute $k$ for node $u$ in the network. In addition to these basic observed variables, we have node community memberships $F$ and community density weights $W$. For community memberships $F$, we assume that each node $u$ has a non-negative affiliation weight $F_{uc}$ to community $c$. Each community has a non-negative weight $W_c$ which represents the edge density of the community. First we describe how similarity of two users is modeled using their node attributes. 
 
 \subsubsection*{User similarity}
 We model profile similarity of a pair of users $(u,v)$ using their node attributes. We use the cosine similarity to model this similarity as below : 
@@ -72,15 +73,15 @@ Next, the link probability between a pair of nodes also depends on their user pr
 
 \[ P_{uv} (c) = 1 - \exp(- \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) \frac{sim_{uv}}{C} \right\rbrace ) \]
 
-Here, $\alpha$ is a hyper-parameter that controls the effect of the two factors in modeling the link probability. We assume that each community $c$ connects nodes $u,v$ independently with probability $P_{uv} (c)$.  For $u$ and $v$ to be connected, it must be connected by at least one community which gives a link generation probability $P_{uv}$ as : 
+Here, $\alpha$ is a hyper-parameter that controls the effect of the two factors in modeling the link probability (set to 0.5 by default). We assume that each community $c$ connects nodes $u,v$ independently with probability $P_{uv} (c)$.  For $u$ and $v$ to be connected, it must be connected by at least one community which gives a link generation probability $P_{uv}$ as : 
 \begin{align*}
 P_{uv} &=  1 - \prod_{c=1}^C (1 - P_{uv}(c) )  \\
  &=1 - \prod_{c=1}^C \exp(- \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) \frac{sim_{uv}}{C} \right\rbrace ) \\
  &= 1 - \exp( -\sum\limits_{c=1}^C \left\lbrace \alpha F_{uc}. W_c. F_{vc} + (1 - \alpha) \frac{sim_{uv}}{C} \right\rbrace)  \\
  &= 1 - \exp( - ( \alpha \mathbf{F_u^{T}} \mathbf{W} \mathbf{F_v} + (1 - \alpha) sim_{uv}))
 \end{align*}
-Here, $\mathbf{F_u}$ denotes the vector of community memberships (of size $C$) for node $u$. $\mathbf{W}$ is a diagonal matrix of size $C \times C$ with entries from $W$.
-This defines the link generation probability in the network. We assume a Multi-Bernoulli process for link generation i.e. each link $(u,v)$ is modeled by a Bernoulli distribution with parameter $P_{uv}$.  This completes the basic formalism of our model. We can clearly observe that the different factors mentioned earlier are captured in modeling this link generation probability. In the section, we describe how to infer communities by formulating a likelihood function that we optimize using gradient ascent. 
+Here, $\mathbf{F_u}$ denotes the vector of community memberships (of size $C$) for node $u$. $\mathbf{W}$(density matrix) is a diagonal matrix of size $C \times C$.
+This defines the link generation probability in the network. We assume a Multi-Bernoulli process for link generation i.e. each link $(u,v)$ is modeled by a Bernoulli distribution with parameter $P_{uv}$.  This completes the basic formalism of our model. We can clearly observe that the different factors mentioned earlier are captured in modeling this link generation probability. In the following section, we describe how to infer communities by formulating a likelihood function that we optimize using gradient ascent. 
 
 \subsection{Community Inference}
 In this section, we describe how we detect network communities by estimating the model parameters from the given data. We aim to infer the values of latent variables $F$ and $W$ based on the observed network and attributes. We note that though the attributes are also observed, we only model the likelihood of the network structure as the attributes are captured in the link generation probability. 
@@ -114,8 +115,8 @@ We now derive the gradient update rule for each $F_{uc}$, which is given as :
 \end{align*}
 
 We obtain the first equation by taking the gradient of $\mathcal{L}$ w.r.t $F_{uc}$. We can simplify the summation over all non-neighbors of $u$ by re-writing it as function of just the neighbors of $u$, since the term $\sum\limits_{v \in V} F_{vc}$ can be computed in advance. The update equation for $F_{uc}$ now becomes : 
-\begin{equation}
- F_{uc}^{n+1} =  \max \Big(0, F_{uc}^n  + \eta_u \frac{\partial \mathcal{L}}{F_{uc}^n}\Big) 
+\begin{equation} \label{gradf}
+ F_{uc}^{n+1} =  \max \Big(0, F_{uc}^n  + \eta_u \frac{\partial \mathcal{L}}{\partial F_{uc}^n}\Big) 
 \end{equation}
 In this equation, $\eta_{u}$ is the learning rate for the node $u$, which is estimated using backtracking line-search \cite{boyd} for performing the gradient updates of node $u$. We note here that the gradient equation (1) here lends itself to easy parallelism. Specifically, we can perform the gradient updates for each node $u$ in parallel, which will leads to great speedup. 
 \subsubsection*{Gradient update for W}
@@ -126,26 +127,45 @@ The gradient update for $W$ is derived in a very similar manner to $F$. We keep 
 \end{align*}
 The gradient update for $W_c$ is given by : 
 
-\begin{equation}
-W_{c}^{n+1} =  \max \Big(0, W_{c}^n  + \eta_w \frac{\partial \mathcal{L}}{W_{c}^n}\Big) 
+\begin{equation} \label{gradw}
+W_{c}^{n+1} =  \max \Big(0, W_{c}^n  + \eta_c \frac{\partial \mathcal{L}}{\partial W_{c}^n}\Big) 
 \end{equation}
-In this case also, we can capture gradients  for each community is parallel.  The learning rate $\eta_w$ is again learned using line search. \\[3pt]
+In this case also, we can capture gradients  for each community is parallel.  The learning rate $\eta_c$ is again learned using line search for each c. \\[3pt]
 The gradient ascent algorithm is performed by alternatively updating $F$ and $W$ in each iteration.  We stop when the relative change in likelihood is less than 0.001 \% or if 1000 iterations has been reached. We provide a parallel implementation of both our algorithm and CESNA in Java. 
+
+\subsection{Operational Details}
 \subsubsection*{Detecting community assignments}
-The gradient ascent algorithm will give us community memberships for each node $u$ in the network. We use an idea similar to what is used by CESNA to detect communities. To determine if node $u$ belongs to community $c$, we require that $F_{uc}$ is greater than a threshold $\delta_c$ for community $c$. We set $\delta_c$ so that node $u$ belongs to community $c$ if $u$ is connected to other members of $c$ with an edge probability greater than $1/N$. In doing so, we ignore the contribution of attributes to the edge probability. 
+The gradient ascent algorithm will give us community memberships for each node $u$ in the network. Based on these values we need to perform assignments of nodes to communities. To determine if node $u$ belongs to community $c$, we require that $F_{uc}$ is greater than a threshold $\delta_c$ for community $c$. We set $\delta_c$ so that node $u$ belongs to community $c$ if $u$ is connected to other members of $c$ with an edge probability greater than $1/N$ (similar to CESNA). In doing so, we ignore the contribution of attributes to the edge probability. 
 We determine $\delta_c$ as : 
 
-\[ 1 - \exp(1 - \delta_c^2 W_c) \geq \frac{1}{N} \]
-This gives us :
+\[P(u,v) \geq (1 - \exp(1 - \delta_c^2 W_c)) \geq \frac{1}{N} \]
+Where u and v are two nodes lying in c. Upon solving this inequality, we obtain :
 $$\delta_c = \sqrt{\frac{\log(\frac{N}{N-1})}{W_c}}$$
-
+i.e,
+$$F_{uc} \geq \sqrt{\frac{\log(\frac{N}{N-1})}{W_c}} \implies u \in c$$
 \subsubsection*{Choosing the best number of communities}
 In order to automatically find the best number of communities $C$, we remove $10 \%$ of the edges from the network to create a hold-out set. Then, we vary $C$ in a range from 5 to 15 and fit the remaining network using our model.  We evaluate the likelihood of the hold-out set using our estimated model. The value of $C$ that gives us maximum likelihood on the held-out set is chosen as the number of communities. \\[5pt]
-In our model, we have only one hyper-parameter $\alpha$ which determines the trade-off between user profile similarity and node community memberships. It is set to 0.5 by default. 
+In our model, hyper-parameter $\alpha$ determines the trade-off between user profile similarity and node community memberships. It is set to 0.5 by default. 
 
 \subsubsection*{Initial community memberships}
-TODO - conductance etc.
+It is essential to meaningfully initialize community memberships to ensure faster convergence of the gradient ascent and to produce better results. We use a simple graph based heuristic to perform initial community membership assignments. For each node, $n \in G$, where G is the input ego network, a locality $L_{n}$ is constructed with the node and it's immediate neighbors:
+\\[5pt]
+$$\text{In-Out edge ratio}(L_{n}) = \frac{\text{Edges within }L_{n}}{\text{Edges emerging from }L_{n}}$$
+All nodes are sorted by the In-Out ratio defined above. The nodes with the best ratios and meeting a minimum neighborhood size requirement, are assigned with higher initialization of $F_{uc}$ along with their immediate neighbors to some community c. This makes the algorithm more likely to ultimately place these localities within a single community.
 
+\subsection*{Initial community density}
+The initial community density weights W must be representative of the local density of edges. As described above, most communities are initialized in a manner that they favour some strongly connected neighborhoods. The density values of these communities are initialized to the In-Out edge ratios obtained for the respective neighborhoods.
+
+\subsection*{Line Search for Gradient Ascent}
+In functions that involve updates over several variables, it is necessary to choose an appropriate value of the learning rate $\eta$ in the gradient update equations \ref{gradf} and \ref{gradw}. We use the Armijo Goldstein rule to choose learning rates for our variables. Learning rates are picked at the granularity of each user's community memberships in F updates and at the granularity of each community for W updates, in every gradient ascent iteration.
+\\[3pt]
+Choose the largest possible $\eta_c$ for community c such that:
+$$[L(W_{c}^n  + \eta_c	 \frac{\partial \mathcal{L}}{\partial W_{c}^n}) - L(W_{c}^n)]  \geq \tau(||\frac{\partial \mathcal{L}}{\partial W_{c}^n}||)\eta_c$$
+Note that F need not be explicitly mentioned as part of the likelihood function here since the variables are updated one at a time. Each is maintained constant when the other is being updated.
+\\[5pt]
+Similarly for $F_{u}$ choose the largest possible $\eta_u$ such that:
+$$[L(F_{u}^n  + \eta_cu \frac{\partial \mathcal{L}}{\partial F_{u}^n}) - L(F_{u}^n)]  \geq \tau(||\frac{\partial \mathcal{L}}{\partial F_{u}^n}||)\eta_u$$
+Note that Norm here represents L2 Norm of the update vector, since $F_{u}$ is a vector of length equal to number of communities.
 \section{Experimental Evaluation}
 \subsection{Setup}
 \subsection{Running Time}
@@ -176,12 +196,12 @@ Graph 3980 & 0.3375 & 0.32564 \\ \hline
 \end{table}
 
 The plot depicting the comparison of the two algorithms is shown below.
-\begin{figure}[H]
-\begin{center}
-\includegraphics[scale=1]{plot.png}
-\caption{Histogram showing the performance of our model and CESNA on different graphs}
-\end{center}
-\end{figure}
+%\begin{figure}[H]
+%\begin{center}
+%\includegraphics[scale=1]{plot.png}
+%\caption{Histogram showing the performance of our model and CESNA on different graphs}
+%\end{center}
+%\end{figure}
 \begin{thebibliography}{3}
 \bibitem{boyd}
 Boyd, Stephen, and Lieven Vandenberghe. Convex optimization. Cambridge university press, 2004.
