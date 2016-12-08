@@ -371,7 +371,7 @@ public class Model {
 			for (int c = 0; c < C; c++)
 				if (F[u][c] > delta_c[c])
 					communities.get(c).add(u);
-
+		// Print the final communities found
 		if (print) {
 			for (ArrayList<Integer> comm : communities) {
 				System.out.print("Circle");
@@ -383,7 +383,7 @@ public class Model {
 		BufferedWriter bw = new BufferedWriter(new FileWriter(outputFilename));
 		for (int i = 0; i < communities.size(); i++) {
 			ArrayList<Integer> comm = communities.get(i);
-			bw.write("Circle"+i);
+			bw.write("Circle" + i);
 			for (int x : comm)
 				bw.write("\t" + nodeIdMap.get(x));
 			bw.write("\n");
@@ -401,5 +401,4 @@ public class Model {
 		getCommunities(print, outputFilename);
 		return 0.0;
 	}
-
 }
