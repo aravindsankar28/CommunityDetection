@@ -50,7 +50,27 @@ This paper proposes a probabilistic model for generating network topology and no
 \section{Algorithm 2 - Our model}
 We first provide the main motivation behind the design of our model.
 \subsection{Motivation}
-We propose our model by drawing the basic idea of community memberships for each node from CESNA. However, we aim to simplify the network and attribute generation process and improve it using insights that we obtain from our dataset. First, we analyzed the ground truth communities in the given dataset to determine the edge density for each community. In Table 1, we show the mean value of density in each ego-network, along with the standard deviation. We can clearly see that there is a significant variation in the density of the ground truth communities. Thus it is preferable to have a model which permits different communities to have variable contribution to the edge likelihood. We capture this explicitly in our model by allowing each community to have a different influence in edge formation (lets call this community density, since dense communities have more influence on edge likelihood) unlike most other models.  \\[3pt]
+We propose our model by drawing the basic idea of community memberships for each node from CESNA. However, we aim to simplify the network and attribute generation process and improve it using insights that we obtain from our dataset. First, we analyzed the ground truth communities in the given dataset to determine the edge density for each community. In Table 1, we show the mean value of density in each ego-network, along with the standard deviation and coefficient of variation (CV).  We can clearly see that there is a significant variation in the density of the ground truth communities with many values of CV close to 1. Thus it is preferable to have a model which permits different communities to have variable contribution to the edge likelihood. We capture this explicitly in our model by allowing each community to have a different influence in edge formation (lets call this community density, since dense communities have more influence on edge likelihood) unlike most other models.  \\[3pt]
+
+\begin{table}[H]
+\begin{center}
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Graph ID} &	\textbf{Mean edge density}	& \textbf{Standard  Deviation} & \textbf{Coef. of Variation}	 \\ \hline
+0	& 0.282	& 0.315	& 1.117021277 \\ \hline
+107	& 0.327	& 0.216	& 0.660550459 \\ \hline
+348	& 0.516	& 0.21	& 0.406976744 \\ \hline
+414	& 0.631	& 0.267	& 0.423137876 \\ \hline
+686	& 0.295	& 0.23	& 0.779661017 \\ \hline
+698	& 0.616	& 0.312	& 0.506493506 \\ \hline
+1684	& 0.393	& 0.27	& 0.687022901 \\ \hline
+1912	& 0.493	& 0.294	& 0.596348884 \\ \hline
+3437	& 0.506	& 0.32	& 0.632411067 \\ \hline
+3980	&0.46	& 0.403	& 0.876086957 \\ \hline
+\end{tabular}
+\end{center}
+\caption{Mean and standard deviation of ground truth communities in the facebook dataset}
+\end{table}
 
 The second insight is that node attributes in ego-networks tend to be very sparse and noisy. This means that explicitly modeling the generation of node attributes based on community memberships could lead to ill formed communities. Instead, we use the node attributes to capture the profile similarity between a pair of users, which is now used to guide the formation of edges in a network based on community memberships of each node. This also has an added benefit in that the complexity of the model is reduced greatly as we only model the likelihood of the observed edges in the network. \\[3pt]
 To summarize, we model the likelihood of observing the network edges based on community memberships of each node, community density and node attributes. We define a likelihood function to capture this idea and propose a parallel optimization algorithm to infer the parameters of our model. We find that our model is much faster than CESNA (our implementation) in practice (both models were implemented in Java).
@@ -171,19 +191,19 @@ The Norm here represents L2 Norm of the update vector, since $F_{u}$ is a vector
 We run our model on the 10 ego networks present in the Facebook dataset \cite{facebook dataset}. The edge - attribute tradeoff parameter $\alpha$ is set to 0.5. Stopping condition is set to 0.1\% for cross validation fits and 0.001\% to fit the final model once K has been determined.  The code is parallelized across users for $F_{u}$ update computation and across communities for $W_{c}$ updates. The number of threads is set to 8 and executed on an 8-core machine for optimal performance.
 \subsection{An important observation}
 We find that in most graphs, the changes to the density parameter $W$ tend to rely heavily on the initializations, especially for larger graphs. In some cases, a few communities tend to dominate over iterations and reduce the quality of communities generated. Based on our empirical evaluation with the facebook dataset, the initial density values which are assigned based on the edge ratio, tend to perform well and capture the general structure of communities generated. Hence as a simplifying step, we have removed density updates in the final submission to reduce running times, and to perform well on graphs of all sizes. The W parameters thus remains set constant to the initial density values assigned based on the In-Out edge ratio as defined in section 3.4. The subsequent runtimes are recorded with this simplification.
-\subsection{Running Time (for a fixed number of clusters set to 10)}
-Cross validation is not performed in order to compare our implementations fairly. Both models are run with K fixed to 10 for all the ego-networks.
-\begin{tabular}{|c|c|}
-\hline
-\textbf{Graph} & \textbf{CESNA} \\ \hline
-\end{tabular}
+%\subsection{Running Time (for a fixed number of clusters set to 10)}
+%Cross validation is not performed in order to compare our implementations fairly. Both models are run with K fixed to 10 for all the ego-networks.
+%\begin{tabular}{|c|c|}
+%\hline
+%\textbf{Graph} & \textbf{CESNA} \\ \hline
+%\end{tabular}
 \subsection{Quality}
 We evaluate the quality of the communities using the evaluation metric proposed in CESNA given by : 
 \[ \frac{1}{2 |C^{*}|} \sum\limits_{C_i^{*} \in C^{*}} \max_{C_j \in C} \delta (C_i^{*}, C_j) + \frac{1}{2 |C|} \sum\limits_{C_j \in C} \max_{C_i^{*} \in C^{*}} \delta (C_i^{*}, C_j) \]
 
 Here, $C$ denotes the  predicted communities and $C^{*}$ the original ground truth communities. $\delta(C_i^{*}, C_j)$ is a similarity measure between the communities $C_i^{*}$ and $C_j$ which we assume to be the Jaccard similarity. The performance of our model and CESNA based on this metric, are shown below :
 
-\begin{table}[H]
+\begin{table}[t]
 \begin{center}
 \begin{tabular}{|c|c|c|}
 \hline
@@ -221,20 +241,6 @@ Leskovec, Jure, and Andrej Krevl. "SNAP Datasets: Stanford large network dataset
 McAuley, Julian J., and Jure Leskovec. "Learning to Discover Social Circles in Ego Networks." NIPS. Vol. 2012. 2012.
 \bibitem{cesna}
 Yang, Jaewon, Julian McAuley, and Jure Leskovec. "Community detection in networks with node attributes." 2013 IEEE 13th International Conference on Data Mining. IEEE, 2013.
-\bibitem{plsa}
-Hofmann, Thomas. "Probabilistic latent semantic indexing." Proceedings of the 22nd annual international ACM SIGIR conference on Research and development in information retrieval. ACM, 1999.
-\bibitem{lda}
-Blei, David M., Andrew Y. Ng, and Michael I. Jordan. "Latent dirichlet allocation." Journal of machine Learning research 3.Jan (2003): 993-1022.
-\bibitem{l1}
- L. Akoglu, H. Tong, B. Meeder, and C. Faloutsos. PICS: Parameter-free
-Identification of Cohesive Subgroups in Large Attributed Graphs. SDM
-’12, 2012.
-\bibitem{l2}
-M. Ester, R. Ge, B. Gao, Z. Hu, and B. Ben-Moshe. Joint Cluster
-Analysis of Attribute Data and Relationship Data: the Connected kCenter
-Problem. In SDM ’06, 2006.
-\bibitem{johnson}
-Johnson, Stephen C. "Hierarchical clustering schemes." Psychometrika 32.3 (1967): 241-254.
 \end{thebibliography}
 
 \end{document}
